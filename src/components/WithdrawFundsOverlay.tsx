@@ -4,11 +4,12 @@ import Image from 'next/image';
 import { useState, useEffect, useRef } from 'react';
 import Cookies from 'js-cookie';
 import { toast } from 'react-toastify';
-import api from '../lib/api'; // Adjust path as needed
-import { getLoginRedirectUrl } from '../config/env'; // Adjust path as needed
+import api from '../lib/api';
+import { getLoginRedirectUrl } from '../config/env';
 import { bankList, BankName } from './bankList';
 import Loader from './Loader';
 import { useRouter } from 'next/navigation';
+import { AxiosError } from 'axios'; // Import AxiosError
 
 interface WithdrawFundsOverlayProps {
   isOpen: boolean;
@@ -78,7 +79,7 @@ export default function WithdrawFundsOverlay({
 
     if (!accessToken || !sellerDataString) {
       toast.error('Authentication required. Please log in.');
-      router.push(getLoginRedirectUrl('seller')); // Use centralized login URL
+      router.push(getLoginRedirectUrl('seller'));
       return;
     }
 
@@ -89,7 +90,7 @@ export default function WithdrawFundsOverlay({
     } catch (err) {
       console.error('WithdrawFundsOverlay - Error parsing seller data:', err);
       toast.error('Invalid session data. Please log in again.');
-      router.push(getLoginRedirectUrl('seller')); // Use centralized login URL
+      router.push(getLoginRedirectUrl('seller'));
       return;
     }
 
@@ -117,9 +118,10 @@ export default function WithdrawFundsOverlay({
         onWithdrawSuccess();
         setTimeout(() => onClose(), 2000);
       }
-    } catch (error: any) {
-      console.error('WithdrawFundsOverlay - Withdrawal error:', error.response?.data || error.message);
-      const errorMessage = error.response?.data?.message || 'Unknown error';
+    } catch (error: unknown) {
+      const axiosError = error as AxiosError<{ message?: string }>;
+      console.error('WithdrawFundsOverlay - Withdrawal error:', axiosError.response?.data || axiosError.message);
+      const errorMessage = axiosError.response?.data?.message || 'Unknown error';
       toast.error(`Failed to process withdrawal: ${errorMessage}`);
     } finally {
       setIsSubmitting(false);

@@ -3,10 +3,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import WithdrawFundsOverlay from '../../../components/WithdrawFundsOverlay'; // Adjust path as needed
-import api from '../../../lib/api'; // Adjust path as needed
+import WithdrawFundsOverlay from '../../../components/WithdrawFundsOverlay';
+import api from '../../../lib/api';
 import Cookies from 'js-cookie';
-import { getLoginRedirectUrl } from '../../../config/env'; // Adjust path as needed
+import { getLoginRedirectUrl } from '../../../config/env';
+import { AxiosError } from 'axios'; // Import AxiosError
 
 interface Transaction {
   id: string;
@@ -48,7 +49,7 @@ export default function WalletTransactions() {
     const sellerDataString = Cookies.get('sellerData');
 
     if (!accessToken || !sellerDataString) {
-      router.push(getLoginRedirectUrl('seller')); // Use centralized login URL
+      router.push(getLoginRedirectUrl('seller'));
       return;
     }
 
@@ -58,7 +59,7 @@ export default function WalletTransactions() {
       sellerId = sellerData.id;
     } catch (err) {
       console.error('WalletTransactions - Error parsing seller data:', err);
-      router.push(getLoginRedirectUrl('seller')); // Use centralized login URL
+      router.push(getLoginRedirectUrl('seller'));
       return;
     }
 
@@ -86,14 +87,15 @@ export default function WalletTransactions() {
         createdAt: tx.createdAt || new Date().toISOString(),
       }));
       setTransactions(mappedTransactions);
-    } catch (error: any) {
-      if (error.response?.status === 404) {
+    } catch (error: unknown) {
+      const axiosError = error as AxiosError<{ message?: string }>;
+      if (axiosError.response?.status === 404) {
         setIsWalletActivated(false);
         setBalance(0);
         setTransactions([]);
       } else {
-        console.error('WalletTransactions - Error fetching wallet data:', error.response?.data || error.message);
-        router.push(getLoginRedirectUrl('seller')); // Use centralized login URL
+        console.error('WalletTransactions - Error fetching wallet data:', axiosError.response?.data || axiosError.message);
+        router.push(getLoginRedirectUrl('seller'));
       }
     } finally {
       setIsLoading(false);
@@ -227,7 +229,7 @@ export default function WalletTransactions() {
             It looks like you haven’t set up your wallet yet. Activate your wallet to start managing your transactions and withdrawing funds.
           </p>
           <button
-            onClick={() => router.push('/dashboard')} // Redirect to dashboard to trigger wallet creation
+            onClick={() => router.push('/dashboard')}
             className="w-full max-w-md bg-[#F26E52] text-white py-4 rounded-md text-lg font-semibold hover:bg-[#e65c41] transition-colors"
           >
             Create Wallet Now

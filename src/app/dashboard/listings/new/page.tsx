@@ -1,4 +1,3 @@
-// src/app/dashboard/listings/new/page.tsx
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -9,6 +8,7 @@ import { toast } from 'react-toastify';
 import Cookies from 'js-cookie';
 import api from '@/src/lib/api';
 import { getLoginRedirectUrl } from '@/src/config/env';
+import { AxiosError } from 'axios'; // Import AxiosError
 
 interface SellerData {
   id: string;
@@ -315,9 +315,10 @@ export default function AddListingClient() {
           router.push('/dashboard/listings');
         }
       }
-    } catch (err: any) {
-      console.error('AddListingClient - handleSubmit: Error:', err.response?.data || err.message);
-      const errorMessage = err.response?.data?.message || 'Failed to process request.';
+    } catch (err) {
+      const axiosError = err as AxiosError<{ message?: string }>;
+      console.error('AddListingClient - handleSubmit: Error:', axiosError.response?.data || axiosError.message);
+      const errorMessage = axiosError.response?.data?.message || 'Failed to process request.';
       setError(errorMessage);
       toast.error(`Failed to ${isEditMode ? 'update' : 'submit'} listing: ${errorMessage}`);
     } finally {

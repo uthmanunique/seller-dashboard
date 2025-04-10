@@ -5,8 +5,9 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-toastify';
 import Cookies from 'js-cookie';
-import api from '../../../lib/api'; // Adjust path as needed
-import { getLoginRedirectUrl } from '../../../config/env'; // Adjust path as needed
+import api from '../../../lib/api';
+import { getLoginRedirectUrl } from '../../../config/env';
+import { AxiosError } from 'axios'; // Import AxiosError
 
 interface SellerData {
   id: string;
@@ -64,7 +65,7 @@ export default function Settings() {
 
       if (!accessToken || !sellerDataString) {
         console.log('Settings - No tokens or seller data, redirecting to login');
-        router.push(getLoginRedirectUrl('seller')); // Use centralized login URL
+        router.push(getLoginRedirectUrl('seller'));
         return;
       }
 
@@ -73,7 +74,7 @@ export default function Settings() {
         if (!sellerData.id) {
           console.error('Settings - No seller ID in sellerData');
           setError('Invalid session data. Please log in again.');
-          router.push(getLoginRedirectUrl('seller')); // Use centralized login URL
+          router.push(getLoginRedirectUrl('seller'));
           return;
         }
 
@@ -102,7 +103,7 @@ export default function Settings() {
         console.error('Settings - Error processing settings data:', err);
         setError('Failed to load settings. Please try again.');
         toast.error('Failed to load settings.');
-        router.push(getLoginRedirectUrl('seller')); // Use centralized login URL
+        router.push(getLoginRedirectUrl('seller'));
       } finally {
         setIsLoading(false);
       }
@@ -122,11 +123,11 @@ export default function Settings() {
     const sellerDataString = Cookies.get('sellerData');
 
     if (!accessToken || !sellerDataString) {
-      router.push(getLoginRedirectUrl('seller')); // Use centralized login URL
+      router.push(getLoginRedirectUrl('seller'));
       return;
     }
 
-    const sellerData = JSON.parse(sellerDataString);
+    const sellerData: SellerData = JSON.parse(sellerDataString);
     const formData = new FormData();
     formData.append('profilePictureUrl', file);
 
@@ -140,15 +141,16 @@ export default function Settings() {
       );
 
       if (response.status === 200) {
-        const imageUrl = response.data.profilePictureUrl || URL.createObjectURL(file); // Use server URL if provided
+        const imageUrl = response.data.profilePictureUrl || URL.createObjectURL(file);
         setProfilePicture(imageUrl);
         const updatedSellerData = { ...sellerData, profilePicture: imageUrl };
         localStorage.setItem('sellerData', JSON.stringify(updatedSellerData));
         Cookies.set('sellerData', JSON.stringify(updatedSellerData));
         toast.success(response.data.message);
       }
-    } catch (err: any) {
-      console.error('Settings - Error uploading profile picture:', err.response?.data || err.message);
+    } catch (err: unknown) {
+      const axiosError = err as AxiosError<{ message?: string }>;
+      console.error('Settings - Error uploading profile picture:', axiosError.response?.data || axiosError.message);
       setError('Failed to update profile picture.');
       toast.error('Failed to update profile picture.');
     } finally {
@@ -160,7 +162,7 @@ export default function Settings() {
     setIsLoading(true);
     const accessToken = Cookies.get('accessToken');
     if (!accessToken) {
-      router.push(getLoginRedirectUrl('seller')); // Use centralized login URL
+      router.push(getLoginRedirectUrl('seller'));
       return;
     }
 
@@ -169,8 +171,9 @@ export default function Settings() {
       if (response.status === 201) {
         toast.success(response.data.message);
       }
-    } catch (err: any) {
-      console.error('Settings - Error requesting OTP:', err.response?.data || err.message);
+    } catch (err: unknown) {
+      const axiosError = err as AxiosError<{ message?: string }>;
+      console.error('Settings - Error requesting OTP:', axiosError.response?.data || axiosError.message);
       setError('Failed to request OTP.');
       toast.error('Failed to request OTP.');
     } finally {
@@ -188,11 +191,11 @@ export default function Settings() {
     const sellerDataString = Cookies.get('sellerData');
 
     if (!accessToken || !sellerDataString) {
-      router.push(getLoginRedirectUrl('seller')); // Use centralized login URL
+      router.push(getLoginRedirectUrl('seller'));
       return;
     }
 
-    const sellerData = JSON.parse(sellerDataString);
+    const sellerData: SellerData = JSON.parse(sellerDataString);
 
     try {
       const payload = {
@@ -208,14 +211,14 @@ export default function Settings() {
         setNewPassword('');
         setIsPasswordEditable(false);
         toast.success(response.data.message);
-        // Log out
         Cookies.remove('accessToken');
         Cookies.remove('sellerData');
         localStorage.removeItem('sellerData');
-        router.push(getLoginRedirectUrl('seller')); // Use centralized login URL
+        router.push(getLoginRedirectUrl('seller'));
       }
-    } catch (err: any) {
-      console.error('Settings - Error changing password:', err.response?.data || err.message);
+    } catch (err: unknown) {
+      const axiosError = err as AxiosError<{ message?: string }>;
+      console.error('Settings - Error changing password:', axiosError.response?.data || axiosError.message);
       setError('Failed to change password.');
       toast.error('Failed to change password.');
     } finally {
@@ -233,11 +236,11 @@ export default function Settings() {
     const sellerDataString = Cookies.get('sellerData');
 
     if (!accessToken || !sellerDataString) {
-      router.push(getLoginRedirectUrl('seller')); // Use centralized login URL
+      router.push(getLoginRedirectUrl('seller'));
       return;
     }
 
-    const sellerData = JSON.parse(sellerDataString);
+    const sellerData: SellerData = JSON.parse(sellerDataString);
 
     try {
       const payload = {
@@ -246,7 +249,7 @@ export default function Settings() {
         otp,
       };
       const response = await api.post(
-        `/seller/settings/update-email?userType=SELLER&userId=${sellerData.id}`, // Corrected endpoint
+        `/seller/settings/update-email?userType=SELLER&userId=${sellerData.id}`,
         payload
       );
       if (response.status === 200) {
@@ -258,14 +261,14 @@ export default function Settings() {
         setOtp('');
         setIsEmailEditable(false);
         toast.success(response.data.message);
-        // Log out
         Cookies.remove('accessToken');
         Cookies.remove('sellerData');
         localStorage.removeItem('sellerData');
-        router.push(getLoginRedirectUrl('seller')); // Use centralized login URL
+        router.push(getLoginRedirectUrl('seller'));
       }
-    } catch (err: any) {
-      console.error('Settings - Error changing email:', err.response?.data || err.message);
+    } catch (err: unknown) {
+      const axiosError = err as AxiosError<{ message?: string }>;
+      console.error('Settings - Error changing email:', axiosError.response?.data || axiosError.message);
       setError('Failed to change email.');
       toast.error('Failed to change email.');
     } finally {
@@ -279,11 +282,11 @@ export default function Settings() {
     const sellerDataString = Cookies.get('sellerData');
 
     if (!accessToken || !sellerDataString) {
-      router.push(getLoginRedirectUrl('seller')); // Use centralized login URL
+      router.push(getLoginRedirectUrl('seller'));
       return;
     }
 
-    const sellerData = JSON.parse(sellerDataString);
+    const sellerData: SellerData = JSON.parse(sellerDataString);
 
     try {
       const payload = {
@@ -309,8 +312,9 @@ export default function Settings() {
         Cookies.set('sellerData', JSON.stringify(updatedSellerData));
         toast.success(response.data.message);
       }
-    } catch (err: any) {
-      console.error('Settings - Error updating alerts:', err.response?.data || err.message);
+    } catch (err: unknown) {
+      const axiosError = err as AxiosError<{ message?: string }>;
+      console.error('Settings - Error updating alerts:', axiosError.response?.data || axiosError.message);
       setError('Failed to update alerts.');
       toast.error('Failed to update alerts.');
     } finally {

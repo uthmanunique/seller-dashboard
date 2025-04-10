@@ -3,10 +3,18 @@
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import api from '../../../lib/api'; // Import centralized API instance
+import api from '../../../lib/api';
 import Cookies from 'js-cookie';
 import { toast } from 'react-toastify';
-import { getLoginRedirectUrl } from '../../../config/env'; // Import centralized login URL
+import { getLoginRedirectUrl } from '../../../config/env';
+import { AxiosError } from 'axios'; // Import AxiosError
+
+interface SellerData {
+  id: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+}
 
 export default function ContactPage() {
   const [firstName, setFirstName] = useState('');
@@ -26,18 +34,18 @@ export default function ContactPage() {
     const sellerDataString = Cookies.get('sellerData');
 
     if (!accessToken || !sellerDataString) {
-      router.push(getLoginRedirectUrl('seller')); // Use centralized login URL
+      router.push(getLoginRedirectUrl('seller'));
       return;
     }
 
     try {
-      const sellerData = JSON.parse(sellerDataString);
+      const sellerData: SellerData = JSON.parse(sellerDataString);
       setFirstName(sellerData.firstName || '');
       setLastName(sellerData.lastName || '');
       setEmail(sellerData.email || '');
     } catch (err) {
       console.error('Error parsing seller data:', err);
-      router.push(getLoginRedirectUrl('seller')); // Use centralized login URL
+      router.push(getLoginRedirectUrl('seller'));
     } finally {
       setIsLoading(false);
     }
@@ -62,7 +70,7 @@ export default function ContactPage() {
     const sellerDataString = Cookies.get('sellerData');
 
     if (!accessToken || !sellerDataString) {
-      router.push(getLoginRedirectUrl('seller')); // Use centralized login URL
+      router.push(getLoginRedirectUrl('seller'));
       return;
     }
 
@@ -83,8 +91,9 @@ export default function ContactPage() {
         setEmail('');
         setMessage('');
       }
-    } catch (err: any) {
-      console.error('Error submitting contact form:', err.response?.data || err.message);
+    } catch (err: unknown) { // Change from 'any' to 'unknown'
+      const axiosError = err as AxiosError<{ message?: string }>;
+      console.error('Error submitting contact form:', axiosError.response?.data || axiosError.message);
       setError('Failed to send message. Please try again.');
       toast.error('Failed to send message.');
     } finally {

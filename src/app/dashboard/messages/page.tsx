@@ -3,9 +3,10 @@
 import { useState, useEffect, useRef, ChangeEvent } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import api from '../../../lib/api'; // Adjust path as needed
+import api from '../../../lib/api';
 import Cookies from 'js-cookie';
-import { getLoginRedirectUrl } from '../../../config/env'; // Adjust path as needed
+import { getLoginRedirectUrl } from '../../../config/env';
+import { AxiosError } from 'axios'; // Import AxiosError
 
 interface Sender {
   id: string;
@@ -49,6 +50,20 @@ interface UIMessage {
     pending?: boolean;
   }[];
   date: string;
+}
+
+interface PendingMessage {
+  id: string;
+  senderId: string;
+  sender: string;
+  message: string;
+  time: string;
+  attachments?: string[];
+  delivered?: boolean;
+  avatar?: string;
+  pending?: boolean;
+  error?: boolean;
+  conversationId: string;
 }
 
 export default function Messages() {
@@ -156,15 +171,16 @@ export default function Messages() {
 
         const pendingMessagesString = Cookies.get(`pendingMessages_${sellerId}`);
         console.log('fetchMessages: Raw Pending Messages from Cookie:', pendingMessagesString);
-        const pendingMessages = pendingMessagesString ? JSON.parse(pendingMessagesString) : [];
+        const pendingMessages: PendingMessage[] = pendingMessagesString ? JSON.parse(pendingMessagesString) : [];
         console.log('fetchMessages: Parsed Pending Messages:', pendingMessages);
 
-        const mergedMessages = mergePendingMessages(formattedMessages, pendingMessages, sellerId);
+        const mergedMessages = mergePendingMessages(formattedMessages, pendingMessages);
         console.log('fetchMessages: Merged Messages:', mergedMessages);
         setMessages(mergedMessages);
         if (mergedMessages.length > 0) setActiveMessageId(mergedMessages[0].id);
-      } catch (err: any) {
-        console.error('fetchMessages: Error:', err.response?.data || err.message);
+      } catch (err: unknown) { // Change from 'any' to 'unknown'
+        const axiosError = err as AxiosError<{ message?: string }>;
+        console.error('fetchMessages: Error:', axiosError.response?.data || axiosError.message);
         setError('Failed to load messages. Please try again.');
       } finally {
         setLoading(false);
@@ -177,8 +193,7 @@ export default function Messages() {
 
   const mergePendingMessages = (
     fetchedMessages: UIMessage[],
-    pendingMessages: any[],
-    sellerId: string
+    pendingMessages: PendingMessage[]
   ): UIMessage[] => {
     console.log('mergePendingMessages: Starting with fetched:', fetchedMessages);
     console.log('mergePendingMessages: Pending messages:', pendingMessages);
@@ -189,7 +204,6 @@ export default function Messages() {
       console.log('mergePendingMessages: Processing pending message:', pending);
       const convoId = pending.conversationId;
       if (!convoMap.has(convoId)) {
-        // If no conversation exists, create a placeholder
         const timestamp = new Date().toLocaleString('en-US', {
           weekday: 'long',
           day: 'numeric',
@@ -200,7 +214,7 @@ export default function Messages() {
         });
         convoMap.set(convoId, {
           id: convoId,
-          sender: 'You', // Placeholder sender until real data arrives
+          sender: 'You',
           preview: pending.message.slice(0, 30) + '...',
           timestamp: timestamp.split(',')[1].trim(),
           conversation: [],
@@ -224,7 +238,6 @@ export default function Messages() {
           pending: true,
           error: pending.error || false,
         });
-        // Update preview if this is the latest message
         const pendingTime = new Date(pending.time);
         const latestTime = convo.conversation.length > 1
           ? new Date(convo.conversation[0].time)
@@ -248,17 +261,17 @@ export default function Messages() {
 
   const handleSendReply = async () => {
     if (!replyContent.trim() || !activeMessageId) return;
-  
+
     console.log('handleSendReply: Starting');
     const accessToken = Cookies.get('accessToken');
     const sellerDataString = Cookies.get('sellerData');
-  
+
     if (!accessToken || !sellerDataString) {
       console.log('handleSendReply: No tokens, redirecting');
       router.push(getLoginRedirectUrl('seller'));
       return;
     }
-  
+
     let sellerId: string;
     try {
       const sellerData = JSON.parse(sellerDataString);
@@ -269,23 +282,23 @@ export default function Messages() {
       router.push(getLoginRedirectUrl('seller'));
       return;
     }
-  
+
     const activeConvo = messages.find((msg) => msg.id === activeMessageId);
     if (!activeConvo) {
       console.log('handleSendReply: No active conversation found');
       return;
     }
-  
+
     const buyerMessage = activeConvo.conversation.find((msg) => msg.sender !== 'SE');
     const buyerId = buyerMessage?.senderId;
     if (!buyerId) {
       console.error('handleSendReply: No buyer ID found');
       return;
     }
-  
+
     messageCounter.current += 1;
     const tempId = `pending-${Date.now()}-${activeMessageId}-${messageCounter.current}`;
-    const newMessage = {
+    const newMessage: PendingMessage = {
       id: tempId,
       senderId: sellerId,
       sender: 'SE',
@@ -297,8 +310,7 @@ export default function Messages() {
       pending: true,
       conversationId: activeMessageId,
     };
-  
-    // Update UI and save to cookies
+
     setMessages((prev) => {
       console.log('handleSendReply: Updating messages with new message:', newMessage);
       const updatedMessages = prev.map((msg) =>
@@ -311,9 +323,9 @@ export default function Messages() {
             }
           : msg
       );
-  
+
       const pendingMessagesString = Cookies.get(`pendingMessages_${sellerId}`);
-      const pendingMessages = pendingMessagesString ? JSON.parse(pendingMessagesString) : [];
+      const pendingMessages: PendingMessage[] = pendingMessagesString ? JSON.parse(pendingMessagesString) : [];
       const updatedPending = [...pendingMessages, newMessage];
       Cookies.set(`pendingMessages_${sellerId}`, JSON.stringify(updatedPending), {
         expires: 7,
@@ -323,12 +335,11 @@ export default function Messages() {
       console.log('handleSendReply: Pending Messages Saved:', updatedPending);
       return updatedMessages;
     });
-  
+
     setReplyContent('');
     setAttachedFile(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
-  
-    // Send to server
+
     try {
       const formData = new FormData();
       formData.append('sellerId', sellerId);
@@ -336,12 +347,12 @@ export default function Messages() {
       formData.append('content', replyContent);
       formData.append('parentMessageId', activeConvo.conversation[0].id);
       if (attachedFile) formData.append('attachments', attachedFile);
-  
+
       const response = await api.post('/messages/seller/respond', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       console.log('handleSendReply: Server Response:', response.data);
-  
+
       setMessages((prev) => {
         const updatedMessages = prev.map((msg) =>
           msg.id === activeMessageId
@@ -361,12 +372,11 @@ export default function Messages() {
               }
             : msg
         );
-  
-        // Only remove from pending if APPROVED
+
         if (response.data.status === 'APPROVED') {
           const pendingMessagesString = Cookies.get(`pendingMessages_${sellerId}`);
-          const pendingMessages = pendingMessagesString ? JSON.parse(pendingMessagesString) : [];
-          const updatedPending = pendingMessages.filter((p: any) => p.id !== tempId);
+          const pendingMessages: PendingMessage[] = pendingMessagesString ? JSON.parse(pendingMessagesString) : [];
+          const updatedPending = pendingMessages.filter((p: PendingMessage) => p.id !== tempId);
           Cookies.set(`pendingMessages_${sellerId}`, JSON.stringify(updatedPending), {
             expires: 7,
             secure: process.env.NODE_ENV === 'production',
@@ -376,11 +386,12 @@ export default function Messages() {
         } else {
           console.log('handleSendReply: Message still pending, not removing from cookie');
         }
-  
+
         return updatedMessages;
       });
-    } catch (err: any) {
-      console.error('handleSendReply: Error:', err.response?.data || err.message);
+    } catch (err: unknown) { // Change from 'any' to 'unknown'
+      const axiosError = err as AxiosError<{ message?: string }>;
+      console.error('handleSendReply: Error:', axiosError.response?.data || axiosError.message);
       setMessages((prev) =>
         prev.map((msg) =>
           msg.id === activeMessageId

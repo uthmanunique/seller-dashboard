@@ -4,11 +4,12 @@ import Image from 'next/image';
 import { useState, useEffect, useRef } from 'react';
 import Cookies from 'js-cookie';
 import { toast } from 'react-toastify';
-import api from '../lib/api'; // Adjust path as needed
-import { getLoginRedirectUrl } from '../config/env'; // Adjust path as needed
+import api from '../lib/api';
+import { getLoginRedirectUrl } from '../config/env';
 import Loader from './Loader';
 import { bankList, BankName } from './bankList';
 import { useRouter } from 'next/navigation';
+import { AxiosError } from 'axios'; // Import AxiosError
 
 interface CreateWalletOverlayProps {
   isOpen: boolean;
@@ -117,7 +118,7 @@ export default function CreateWalletOverlay({ isOpen, onClose, onWalletCreated }
 
     if (!accessToken || !sellerDataString) {
       toast.error('Authentication required. Please log in.');
-      router.push(getLoginRedirectUrl('seller')); // Use centralized login URL
+      router.push(getLoginRedirectUrl('seller'));
       return;
     }
 
@@ -128,7 +129,7 @@ export default function CreateWalletOverlay({ isOpen, onClose, onWalletCreated }
     } catch (err) {
       console.error('CreateWalletOverlay - Error parsing seller data:', err);
       toast.error('Invalid session data. Please log in again.');
-      router.push(getLoginRedirectUrl('seller')); // Use centralized login URL
+      router.push(getLoginRedirectUrl('seller'));
       return;
     }
 
@@ -161,9 +162,10 @@ export default function CreateWalletOverlay({ isOpen, onClose, onWalletCreated }
         onWalletCreated();
         onClose();
       }
-    } catch (error: any) {
-      console.error('CreateWalletOverlay - Error creating wallet:', error.response?.data || error.message);
-      if (error.response?.status === 409) {
+    } catch (error: unknown) {
+      const axiosError = error as AxiosError<{ message?: string }>;
+      console.error('CreateWalletOverlay - Error creating wallet:', axiosError.response?.data || axiosError.message);
+      if (axiosError.response?.status === 409) {
         toast.info('Wallet already exists for this user.');
         const sellerData = JSON.parse(sellerDataString);
         sellerData.walletCreated = true;
@@ -171,7 +173,7 @@ export default function CreateWalletOverlay({ isOpen, onClose, onWalletCreated }
         onWalletCreated();
         onClose();
       } else {
-        const errorMessage = error.response?.data?.message || 'Unknown error';
+        const errorMessage = axiosError.response?.data?.message || 'Unknown error';
         toast.error(`Failed to create wallet: ${errorMessage}`);
       }
     } finally {
@@ -400,7 +402,7 @@ export default function CreateWalletOverlay({ isOpen, onClose, onWalletCreated }
               />
             </div>
             <div className="relative">
-              <label htmlFor="payoutAccountNumber" className="absolute -top-2 left-3 bg-white px-1 text-xs text-gray-700 font-medium">
+              <label htmlFor="poutAccountNumber" className="absolute -top-2 left-3 bg-white px-1 text-xs text-gray-700 font-medium">
                 Account Number
               </label>
               <input
