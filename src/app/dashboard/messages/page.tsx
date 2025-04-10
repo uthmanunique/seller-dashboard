@@ -46,6 +46,7 @@ interface UIMessage {
     delivered?: boolean;
     error?: boolean;
     avatar?: string;
+    pending?: boolean;
   }[];
   date: string;
 }
@@ -57,9 +58,10 @@ export default function Messages() {
   const [error, setError] = useState<string | null>(null);
   const [replyContent, setReplyContent] = useState('');
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
-  const [previewImage, setPreviewImage] = useState<string | null>(null); // For image preview
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
+  const messageCounter = useRef(0);
 
   useEffect(() => {
     const fetchMessages = async () => {
@@ -85,17 +87,25 @@ export default function Messages() {
       try {
         const approvedResponse = await api.get(`/messages/seller/${sellerId}/get-approved-messages`);
         const approvedMessages: MessageData[] = approvedResponse.data;
+        console.log('Approved Messages:', approvedMessages);
 
         const convoResponse = await api.get(`/messages/conversations/${sellerId}?accountType=SELLER`);
         const conversations: Conversation[] = convoResponse.data;
+        console.log('Conversations:', conversations);
 
-        const allMessages: Conversation[] = conversations.map((convo) => ({
-          ...convo,
-          messages: [
+        const allMessages: Conversation[] = conversations.map((convo) => {
+          const uniqueMessages = [
             ...convo.messages,
             ...approvedMessages.filter((msg) => msg.conversationId === convo.conversationId),
-          ],
-        }));
+          ].reduce((acc, msg) => {
+            if (!acc.some((m) => m.id === msg.id)) {
+              acc.push(msg);
+            }
+            return acc;
+          }, [] as MessageData[]);
+          return { ...convo, messages: uniqueMessages };
+        });
+        console.log('All Messages:', allMessages);
 
         const formattedMessages: UIMessage[] = allMessages.map((convo) => {
           const latestMessage = convo.messages[0];
@@ -133,13 +143,20 @@ export default function Messages() {
                 }),
                 delivered: msg.status === 'APPROVED',
                 avatar: initials,
+                pending: false,
               };
             }),
             date: timestamp.split(',')[0] + ',' + timestamp.split(',')[2],
           };
         });
 
-        setMessages(formattedMessages);
+        const pendingMessagesString = Cookies.get(`pendingMessages_${sellerId}`);
+        console.log('Raw Pending Messages from Cookie:', pendingMessagesString);
+        const pendingMessages = pendingMessagesString ? JSON.parse(pendingMessagesString) : [];
+        console.log('Parsed Pending Messages:', pendingMessages);
+        const mergedMessages = mergePendingMessages(formattedMessages, pendingMessages);
+        console.log('Merged Messages:', mergedMessages);
+        setMessages(mergedMessages);
         if (formattedMessages.length > 0) setActiveMessageId(formattedMessages[0].id);
       } catch (err) {
         if (axios.isAxiosError(err)) {
@@ -156,6 +173,35 @@ export default function Messages() {
 
     fetchMessages();
   }, [router]);
+
+  const mergePendingMessages = (fetchedMessages: UIMessage[], pendingMessages: any[]): UIMessage[] => {
+    return fetchedMessages.map((msg) => {
+      const pendingForConvo = pendingMessages.filter((p) => p.conversationId === msg.id);
+      console.log(`Pending for Convo ${msg.id}:`, pendingForConvo);
+      const approvedIds = new Set(msg.conversation.map((m) => m.id));
+      const pendingIds = new Set<string>();
+
+      const uniquePending = pendingForConvo.reduce((acc, p) => {
+        if (!pendingIds.has(p.id) && !approvedIds.has(p.id)) {
+          pendingIds.add(p.id);
+          acc.push({
+            ...p,
+            id: p.id,
+            pending: true,
+            delivered: false,
+            error: p.error || false,
+          });
+        }
+        return acc;
+      }, [] as any[]);
+      console.log(`Unique Pending for Convo ${msg.id}:`, uniquePending);
+
+      return {
+        ...msg,
+        conversation: [...msg.conversation, ...uniquePending],
+      };
+    });
+  };
 
   const handleFileSelect = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -193,29 +239,41 @@ export default function Messages() {
       return;
     }
 
-    const tempId = Date.now().toString();
-    setMessages((prev) =>
-      prev.map((msg) =>
+    messageCounter.current += 1;
+    const tempId = `pending-${Date.now()}-${activeMessageId}-${messageCounter.current}-${Math.random().toString(36).substr(2, 9)}`;
+    const newMessage = {
+      id: tempId,
+      senderId: sellerId,
+      sender: 'SE',
+      message: replyContent,
+      time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: 'numeric' }),
+      attachments: attachedFile ? [URL.createObjectURL(attachedFile)] : undefined,
+      delivered: false,
+      avatar: 'SE',
+      pending: true,
+      conversationId: activeMessageId,
+    };
+
+    setMessages((prev) => {
+      const updatedMessages = prev.map((msg) =>
         msg.id === activeMessageId
-          ? {
-              ...msg,
-              conversation: [
-                ...msg.conversation,
-                {
-                  id: tempId,
-                  senderId: sellerId,
-                  sender: 'SE',
-                  message: replyContent,
-                  time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: 'numeric' }),
-                  attachments: attachedFile ? [URL.createObjectURL(attachedFile)] : undefined,
-                  delivered: false,
-                  avatar: 'SE',
-                },
-              ],
-            }
+          ? { ...msg, conversation: [...msg.conversation, newMessage] }
           : msg
-      )
-    );
+      );
+      const pendingMessagesString = Cookies.get(`pendingMessages_${sellerId}`);
+      console.log('Current Pending Messages Before Save:', pendingMessagesString);
+      const pendingMessages = pendingMessagesString ? JSON.parse(pendingMessagesString) : [];
+      const updatedPending = [...pendingMessages, newMessage];
+      Cookies.set(`pendingMessages_${sellerId}`, JSON.stringify(updatedPending), {
+        expires: 1,
+        secure: true,
+        sameSite: 'strict',
+      });
+      console.log('Pending Messages Saved to Cookie:', updatedPending);
+      console.log('Cookie After Save:', Cookies.get(`pendingMessages_${sellerId}`));
+      return updatedMessages;
+    });
+
     setReplyContent('');
     setAttachedFile(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -232,8 +290,8 @@ export default function Messages() {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
 
-      setMessages((prev) =>
-        prev.map((msg) =>
+      setMessages((prev) => {
+        const updatedMessages = prev.map((msg) =>
           msg.id === activeMessageId
             ? {
                 ...msg,
@@ -244,13 +302,25 @@ export default function Messages() {
                         id: response.data.id,
                         attachments: response.data.attachments,
                         delivered: response.data.status === 'APPROVED',
+                        pending: response.data.status !== 'APPROVED',
                       }
                     : m
                 ),
               }
             : msg
-        )
-      );
+        );
+        const pendingMessagesString = Cookies.get(`pendingMessages_${sellerId}`);
+        console.log('Pending Messages Before Approval Filter:', pendingMessagesString);
+        const pendingMessages = pendingMessagesString ? JSON.parse(pendingMessagesString) : [];
+        const updatedPending = pendingMessages.filter((p: any) => p.id !== tempId);
+        Cookies.set(`pendingMessages_${sellerId}`, JSON.stringify(updatedPending), {
+          expires: 1,
+          secure: true,
+          sameSite: 'strict',
+        });
+        console.log('Pending Messages After Approval:', updatedPending);
+        return updatedMessages;
+      });
     } catch (err) {
       console.error('Error sending reply:', err);
       setMessages((prev) =>
@@ -259,7 +329,7 @@ export default function Messages() {
             ? {
                 ...msg,
                 conversation: msg.conversation.map((m) =>
-                  m.id === tempId ? { ...m, delivered: false, error: true } : m
+                  m.id === tempId ? { ...m, error: true } : m
                 ),
               }
             : msg
@@ -268,15 +338,13 @@ export default function Messages() {
     }
   };
 
-  // Handle attachment click
   const handleAttachmentClick = (url: string) => {
     const extension = url.split('.').pop()?.toLowerCase();
     const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'bmp'];
 
     if (extension && imageExtensions.includes(extension)) {
-      setPreviewImage(url); // Show image preview
+      setPreviewImage(url);
     } else {
-      // Download document
       const link = document.createElement('a');
       link.href = url;
       link.download = url.split('/').pop() || 'document';
@@ -326,7 +394,7 @@ export default function Messages() {
                 key={msg.id}
                 onClick={() => setActiveMessageId(msg.id)}
                 className={`p-3 mb-2 rounded-md cursor-pointer shadow-md bg-white ${
-                  activeMessageId === msg.id ? 'bg-[#FFF1EE]' : 'hover:bg-gray-100'
+                  activeMessageId === msg.id ? 'bg-gray-200' : 'hover:bg-gray-100'
                 }`}
               >
                 <h3 className="text-sm font-semibold text-[#011631]">{msg.sender}</h3>
@@ -341,15 +409,15 @@ export default function Messages() {
             <>
               <div className="text-center text-xs text-gray-600 p-4 border-b border-gray-200">{activeMessage.date}</div>
               <div className="flex-1 max-h-[calc(100vh-18rem)] overflow-y-auto p-4 space-y-4">
-                {activeMessage.conversation.map((msg, index) => (
+                {activeMessage.conversation.map((msg) => (
                   <div
-                    key={index}
+                    key={msg.id}
                     className={`flex ${msg.sender === 'SE' ? 'justify-end' : 'justify-start'} items-start`}
                   >
                     <div
                       className={`max-w-xs p-3 rounded-lg shadow-md ${
                         msg.sender === 'SE' ? 'bg-[#F26E52] text-white' : 'bg-gray-100 text-gray-800'
-                      }`}
+                      } ${msg.pending ? 'opacity-75' : ''}`}
                     >
                       <p className="text-sm">{msg.message}</p>
                       {msg.attachments?.map((url, i) => (
@@ -414,7 +482,6 @@ export default function Messages() {
         </div>
       </div>
 
-      {/* Image Preview Modal */}
       {previewImage && (
         <div className="fixed inset-0 bg-gradient-to-br from-gray-800/50 to-gray-900/50 flex justify-center items-center z-50">
           <div className="relative max-w-3xl max-h-[80vh] overflow-auto">
