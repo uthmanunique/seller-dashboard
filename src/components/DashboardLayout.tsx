@@ -282,13 +282,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
               className="flex items-center space-x-2"
             >
-              <Image
+              {/* <Image
                 src={userProfile?.profilePicture || '/profile.png'}
                 alt="Profile"
                 width={24}
                 height={24}
-                className="rounded-full"
-              />
+                className="rounded-full" */}
+              {/* /> */}
               {userProfile && (
                 <div className="hidden md:block text-left">
                   <p className="text-xs font-semibold">{userProfile.name}</p>
