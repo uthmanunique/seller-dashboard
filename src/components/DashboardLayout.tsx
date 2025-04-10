@@ -10,7 +10,8 @@ import Cookies from 'js-cookie';
 import Wallet from './Wallet';
 import CreateWalletOverlay from './CreateWalletOverlay';
 import WithdrawFundsOverlay from './WithdrawFundsOverlay';
-import axios from 'axios';
+import api from '../lib/api';
+import { getLoginRedirectUrl } from '../config/env';
 
 interface UserProfile {
   name: string;
@@ -53,11 +54,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [unreadNotifications, setUnreadNotifications] = useState<number>(0);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
-  const [isWalletPromptOpen, setIsWalletPromptOpen] = useState(true); // New state for overlay visibility
+  const [isWalletPromptOpen, setIsWalletPromptOpen] = useState(true);
 
   const router = useRouter();
   const pathname = usePathname();
-  const loginUrl = 'http://localhost:3000/auth/login?role=seller';
+  const loginUrl = getLoginRedirectUrl('seller');
 
   const logAndPersist = useCallback((message: string) => {
     console.log(message);
@@ -100,16 +101,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         profilePicture: sellerData.profilePicture || '/profile.png',
       });
       setIsWalletActivated(sellerData.walletCreated || false);
-      const walletResponse = await axios.get(
-        `https://api-rebrivo.onrender.com/v1/api/wallets/fetch-info?userType=SELLER&userId=${sellerData.id}`,
-        { headers: { Authorization: `Bearer ${accessToken}` } }
+
+      const walletResponse = await api.get(
+        `/wallets/fetch-info?userType=SELLER&userId=${sellerData.id}`
       );
       logAndPersist(`DashboardLayout - Wallet API Response: ${JSON.stringify(walletResponse.data)}`);
       setWalletBalance(walletResponse.data.wallet.balance || 0);
-      const notificationsResponse = await axios.get(
-        `https://api-rebrivo.onrender.com/v1/api/notifications/all/${sellerData.id}`,
-        { headers: { Authorization: `Bearer ${accessToken}` } }
-      );
+
+      const notificationsResponse = await api.get(`/notifications/all/${sellerData.id}`);
       logAndPersist(`DashboardLayout - Notifications API Response: ${JSON.stringify(notificationsResponse.data)}`);
       const fetchedNotifications = notificationsResponse.data.notifications || [];
       setNotifications(fetchedNotifications);
@@ -134,7 +133,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   useEffect(() => {
     if (!isWalletActivated) {
-      setIsWalletPromptOpen(true); // Re-show overlay when pathname changes, unless wallet is created
+      setIsWalletPromptOpen(true);
     }
   }, [pathname, isWalletActivated]);
 
@@ -152,7 +151,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const handleWalletCreated = () => {
     setIsWalletActivated(true);
     setIsWalletOverlayOpen(false);
-    setIsWalletPromptOpen(false); // Ensure prompt doesn’t reappear after wallet creation
+    setIsWalletPromptOpen(false);
     loadUserData();
   };
   const handleWithdrawSuccess = () => {
@@ -198,7 +197,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   logAndPersist(`DashboardLayout - Rendering main layout, userProfile: ${JSON.stringify(userProfile)}`);
-  
+
   return (
     <div className="flex flex-col min-h-screen">
       <header className="bg-[#011631] text-white p-4 flex items-center justify-between w-full sticky top-0 z-50">
@@ -274,21 +273,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               </div>
             )}
           </div>
-          <button aria-label="Cart">
-            <Image src="/cart.png" alt="Cart" width={16} height={16} />
-          </button>
           <div className="relative">
             <button
               onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
               className="flex items-center space-x-2"
             >
-              {/* <Image
+              <Image
                 src={userProfile?.profilePicture || '/profile.png'}
                 alt="Profile"
                 width={24}
                 height={24}
-                className="rounded-full" */}
-              {/* /> */}
+                className="rounded-full"
+              />
               {userProfile && (
                 <div className="hidden md:block text-left">
                   <p className="text-xs font-semibold">{userProfile.name}</p>

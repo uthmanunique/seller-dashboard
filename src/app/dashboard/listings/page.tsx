@@ -5,8 +5,9 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-toastify';
-import axios from 'axios';
+import api from '../../../lib/api'; // Import centralized API instance
 import Cookies from 'js-cookie';
+import { getLoginRedirectUrl } from '../../../config/env'; // Import centralized login URL
 
 interface Listing {
   id: string;
@@ -40,7 +41,7 @@ export default function Listings() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const router = useRouter();
 
-  const tabs = ['All', 'Active', 'Review', 'Sold'];
+  const tabs = ['All', 'Approved', 'Review', 'Sold'];
 
   useEffect(() => {
     const fetchListings = async () => {
@@ -52,7 +53,7 @@ export default function Listings() {
 
       if (!accessToken || !sellerDataString) {
         console.log('Listings - No tokens or seller data, redirecting to login');
-        router.push('http://localhost:3000/auth/login?role=seller');
+        router.push(getLoginRedirectUrl('seller')); // Use centralized login URL
         return;
       }
 
@@ -60,10 +61,9 @@ export default function Listings() {
         const sellerData = JSON.parse(sellerDataString);
         console.log('Listings - Seller Data from cookies:', sellerData);
 
-        const response = await axios.get(
-          `https://api-rebrivo.onrender.com/v1/api/seller/listings/fetch-all/${sellerData.id}`,
-          { headers: { Authorization: `Bearer ${accessToken}` } }
-        );
+        const response = await api.get(
+          `/seller/listings/fetch-all/${sellerData.id}`
+        ); // Use api instance
         console.log('Listings - API Response:', response.data);
 
         if (response.status === 200) {
@@ -85,27 +85,36 @@ export default function Listings() {
             entityType?: string;
             isPremiumSale?: boolean;
             companyProfileUrl?: string;
-          }) => ({
-            id: listing.id,
-            name: listing.businessName || 'Unnamed Listing',
-            category: listing.businessCategoryType || 'Unknown',
-            location: listing.location || 'Unknown',
-            value: `₦${(listing.price || 0).toLocaleString()}`,
-            status: listing.status === 'PENDING' ? 'Review' : listing.status || 'Unknown',
-            views: listing.unlockedByBuyers?.length || 0,
-            inquiries: listing.listOfBuyerRequestingService?.length || 0,
-            image: listing.businessImagesUrls[0] || '/ratel.png',
-            yearEstablished: listing.yearEstablished || 'N/A',
-            reasonForSelling: listing.reasonForSelling || 'Not specified',
-            annualRevenueRange: listing.annualRevenueRange || 'N/A',
-            price: listing.price || 0,
-            isNegotiable: listing.isNegotiable || false,
-            businessType: listing.businessType,
-            entityType: listing.entityType,
-            isPremiumSale: listing.isPremiumSale,
-            companyProfileUrl: listing.companyProfileUrl,
-            businessImagesUrls: listing.businessImagesUrls || [],
-          }));
+          }) => {
+            // Normalize status to title case
+            const rawStatus = listing.status || 'Unknown';
+            const normalizedStatus =
+              rawStatus === 'PENDING' ? 'Review' :
+              rawStatus === 'APPROVED' ? 'Approved' :
+              rawStatus === 'SOLD' ? 'Sold' : rawStatus;
+
+            return {
+              id: listing.id,
+              name: listing.businessName || 'Unnamed Listing',
+              category: listing.businessCategoryType || 'Unknown',
+              location: listing.location || 'Unknown',
+              value: `₦${(listing.price || 0).toLocaleString()}`,
+              status: normalizedStatus,
+              views: listing.unlockedByBuyers?.length || 0,
+              inquiries: listing.listOfBuyerRequestingService?.length || 0,
+              image: listing.businessImagesUrls[0] || '/ratel.png',
+              yearEstablished: listing.yearEstablished || 'N/A',
+              reasonForSelling: listing.reasonForSelling || 'Not specified',
+              annualRevenueRange: listing.annualRevenueRange || 'N/A',
+              price: listing.price || 0,
+              isNegotiable: listing.isNegotiable || false,
+              businessType: listing.businessType,
+              entityType: listing.entityType,
+              isPremiumSale: listing.isPremiumSale,
+              companyProfileUrl: listing.companyProfileUrl,
+              businessImagesUrls: listing.businessImagesUrls || [],
+            };
+          });
           setListings(fetchedListings);
           console.log('Listings - Listings set:', fetchedListings);
         } else {
@@ -115,13 +124,9 @@ export default function Listings() {
         }
       } catch (err) {
         console.error('Listings - Fetch Error:', err);
-        if (axios.isAxiosError(err) && err.response?.status === 401) {
-          console.log('Listings - Unauthorized, redirecting to login');
-          router.push('http://localhost:3000/auth/login?role=seller');
-        } else {
-          setError('Failed to load listings. Please try again.');
-          toast.error('Failed to load listings.');
-        }
+        setError('Failed to load listings. Please try again.');
+        toast.error('Failed to load listings.');
+        // Note: The api instance handles 401 redirects via interceptors
       } finally {
         setLoading(false);
         console.log('Listings fetchListings - Ended');
@@ -145,14 +150,11 @@ export default function Listings() {
       const accessToken = Cookies.get('accessToken');
       if (!accessToken) {
         console.log('Listings - No access token for delete, redirecting to login');
-        router.push('http://localhost:3000/auth/login?role=seller');
+        router.push(getLoginRedirectUrl('seller')); // Use centralized login URL
         return;
       }
 
-      await axios.delete(
-        `https://api-rebrivo.onrender.com/v1/api/seller/listings/delete/${listingId}`,
-        { headers: { Authorization: `Bearer ${accessToken}` } }
-      );
+      await api.delete(`/seller/listings/delete/${listingId}`); // Use api instance
       setListings((prev) => prev.filter((listing) => listing.id !== listingId));
       setShowDeleteConfirm(false);
       setSelectedListing(null);
@@ -248,8 +250,14 @@ export default function Listings() {
                   />
                 </div>
                 {listing.status === 'Sold' && (
-                  <div className="absolute top-2 left-2 bg-red-500 text-white text-xs px-2 py-1 rounded">
-                    Sold
+                  <div className="absolute top-2 left-2">
+                    <Image
+                      src="/sold-tag.png" // Adjust path to your PNG
+                      alt="Sold Tag"
+                      width={60}
+                      height={20}
+                      className="object-contain"
+                    />
                   </div>
                 )}
                 <div className="p-4">
@@ -265,11 +273,13 @@ export default function Listings() {
                     <div className="flex items-center space-x-1">
                       <span
                         className={`h-2 w-2 rounded-full ${
-                          listing.status === 'Active'
+                          listing.status === 'Approved'
                             ? 'bg-green-500'
                             : listing.status === 'Review'
                             ? 'bg-yellow-500'
-                            : 'bg-red-500'
+                            : listing.status === 'Sold'
+                            ? 'bg-red-500'
+                            : 'bg-gray-500'
                         }`}
                       ></span>
                       <p className="text-xs text-gray-600">{listing.status}</p>
@@ -389,7 +399,7 @@ export default function Listings() {
 
       {/* Delete Confirmation Overlay */}
       {showDeleteConfirm && selectedListing && (
-       <div className="fixed inset-0 bg-gradient-to-br from-gray-800/50 to-gray-900/50 flex justify-center items-center z-50">
+        <div className="fixed inset-0 bg-gradient-to-br from-gray-800/50 to-gray-900/50 flex justify-center items-center z-50">
           <div className="bg-white rounded-lg p-6 shadow-lg">
             <h2 className="text-xl font-bold text-[#011631] mb-4">Delete?</h2>
             <p className="text-sm text-gray-600 mb-6">

@@ -3,10 +3,12 @@
 import Image from 'next/image';
 import { useState, useEffect, useRef } from 'react';
 import Cookies from 'js-cookie';
-import axios from 'axios';
 import { toast } from 'react-toastify';
+import api from '../lib/api'; // Adjust path as needed
+import { getLoginRedirectUrl } from '../config/env'; // Adjust path as needed
 import Loader from './Loader';
 import { bankList, BankName } from './bankList';
+import { useRouter } from 'next/navigation';
 
 interface CreateWalletOverlayProps {
   isOpen: boolean;
@@ -38,6 +40,7 @@ export default function CreateWalletOverlay({ isOpen, onClose, onWalletCreated }
   });
   const [showPin, setShowPin] = useState(false);
   const [showConfirmPin, setShowConfirmPin] = useState(false);
+  const router = useRouter();
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -109,15 +112,27 @@ export default function CreateWalletOverlay({ isOpen, onClose, onWalletCreated }
     }
 
     setIsSubmitting(true);
-    try {
-      const sellerDataString = Cookies.get('sellerData');
-      if (!sellerDataString) {
-        throw new Error('No seller data found. Please log in again.');
-      }
-      const sellerData = JSON.parse(sellerDataString);
-      const userId = sellerData.id;
-      const accessToken = Cookies.get('accessToken');
+    const accessToken = Cookies.get('accessToken');
+    const sellerDataString = Cookies.get('sellerData');
 
+    if (!accessToken || !sellerDataString) {
+      toast.error('Authentication required. Please log in.');
+      router.push(getLoginRedirectUrl('seller')); // Use centralized login URL
+      return;
+    }
+
+    let userId: string;
+    try {
+      const sellerData = JSON.parse(sellerDataString);
+      userId = sellerData.id;
+    } catch (err) {
+      console.error('CreateWalletOverlay - Error parsing seller data:', err);
+      toast.error('Invalid session data. Please log in again.');
+      router.push(getLoginRedirectUrl('seller')); // Use centralized login URL
+      return;
+    }
+
+    try {
       const payload = {
         userId,
         firstName: formData.firstName,
@@ -136,32 +151,27 @@ export default function CreateWalletOverlay({ isOpen, onClose, onWalletCreated }
         payoutBankName: formData.payoutBankName,
       };
 
-      const response = await axios.post(
-        'https://api-rebrivo.onrender.com/v1/api/wallets/seller/create',
-        payload,
-        { headers: { Authorization: `Bearer ${accessToken}` } }
-      );
+      const response = await api.post('/wallets/seller/create', payload);
 
       if (response.status === 200 || response.status === 201) {
         toast.success('Wallet created successfully!');
+        const sellerData = JSON.parse(sellerDataString);
         sellerData.walletCreated = true;
         Cookies.set('sellerData', JSON.stringify(sellerData), { secure: true, sameSite: 'strict' });
         onWalletCreated();
         onClose();
       }
-    } catch (error) {
-      console.error('Raw error:', error);
-      const errorMessage = axios.isAxiosError(error) && error.response?.data?.message
-        ? error.response.data.message
-        : 'Unknown error';
-      if (axios.isAxiosError(error) && error.response?.status === 409) {
+    } catch (error: any) {
+      console.error('CreateWalletOverlay - Error creating wallet:', error.response?.data || error.message);
+      if (error.response?.status === 409) {
         toast.info('Wallet already exists for this user.');
-        const sellerData = JSON.parse(Cookies.get('sellerData') || '{}');
+        const sellerData = JSON.parse(sellerDataString);
         sellerData.walletCreated = true;
         Cookies.set('sellerData', JSON.stringify(sellerData), { secure: true, sameSite: 'strict' });
         onWalletCreated();
         onClose();
       } else {
+        const errorMessage = error.response?.data?.message || 'Unknown error';
         toast.error(`Failed to create wallet: ${errorMessage}`);
       }
     } finally {
@@ -337,13 +347,6 @@ export default function CreateWalletOverlay({ isOpen, onClose, onWalletCreated }
                 onChange={handleInputChange}
                 className="w-full h-12 px-4 pt-4 border border-gray-300 rounded-lg text-gray-800 focus:ring-2 focus:ring-[#F26E52] focus:border-transparent transition-all"
               />
-              {/* <Image
-                // src="/calendar.png"
-                alt="Calendar"
-                width={16}
-                height={16} */}
-                {/* className="absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none" */}
-              {/* /> */}
             </div>
             <div className="relative">
               <label htmlFor="gender" className="absolute -top-2 left-3 bg-white px-1 text-xs text-gray-700 font-medium">

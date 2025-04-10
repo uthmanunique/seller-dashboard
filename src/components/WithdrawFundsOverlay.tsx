@@ -3,10 +3,12 @@
 import Image from 'next/image';
 import { useState, useEffect, useRef } from 'react';
 import Cookies from 'js-cookie';
-import axios from 'axios';
 import { toast } from 'react-toastify';
+import api from '../lib/api'; // Adjust path as needed
+import { getLoginRedirectUrl } from '../config/env'; // Adjust path as needed
 import { bankList, BankName } from './bankList';
 import Loader from './Loader';
+import { useRouter } from 'next/navigation';
 
 interface WithdrawFundsOverlayProps {
   isOpen: boolean;
@@ -32,6 +34,7 @@ export default function WithdrawFundsOverlay({
     withdrawalPin: ['', '', '', '', '', ''],
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const router = useRouter();
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -70,18 +73,27 @@ export default function WithdrawFundsOverlay({
     }
 
     setIsSubmitting(true);
+    const accessToken = Cookies.get('accessToken');
+    const sellerDataString = Cookies.get('sellerData');
+
+    if (!accessToken || !sellerDataString) {
+      toast.error('Authentication required. Please log in.');
+      router.push(getLoginRedirectUrl('seller')); // Use centralized login URL
+      return;
+    }
+
+    let userId: string;
     try {
-      const accessToken = Cookies.get('accessToken');
-      const sellerDataString = Cookies.get('sellerData');
-      if (!accessToken || !sellerDataString) {
-        toast.error('Authentication required. Please log in.');
-        onClose();
-        return;
-      }
-
       const sellerData = JSON.parse(sellerDataString);
-      const userId = sellerData.id;
+      userId = sellerData.id;
+    } catch (err) {
+      console.error('WithdrawFundsOverlay - Error parsing seller data:', err);
+      toast.error('Invalid session data. Please log in again.');
+      router.push(getLoginRedirectUrl('seller')); // Use centralized login URL
+      return;
+    }
 
+    try {
       const payload = {
         remark: `Withdrawal_${Date.now()}`,
         withdrawalType,
@@ -94,22 +106,20 @@ export default function WithdrawFundsOverlay({
         withdrawalPin: pin,
       };
 
-      const response = await axios.post(
-        `https://api-rebrivo.onrender.com/v1/api/wallets/seller/payout/withdraw?userType=SELLER&userId=${userId}`,
+      const response = await api.post(
+        `/wallets/seller/payout/withdraw?userType=SELLER&userId=${userId}`,
         payload,
-        { headers: { Authorization: `Bearer ${accessToken}` }, timeout: 30000 }
+        { timeout: 30000 }
       );
 
-      if (response.data.message.includes('successfully')) {
+      if (response.data.message?.includes('successfully')) {
         toast.success('Withdrawal successful!');
         onWithdrawSuccess();
         setTimeout(() => onClose(), 2000);
       }
-    } catch (error) {
-      console.error('Withdrawal error:', error);
-      const errorMessage = axios.isAxiosError(error) && error.response?.data?.message
-        ? error.response.data.message
-        : 'Unknown error';
+    } catch (error: any) {
+      console.error('WithdrawFundsOverlay - Withdrawal error:', error.response?.data || error.message);
+      const errorMessage = error.response?.data?.message || 'Unknown error';
       toast.error(`Failed to process withdrawal: ${errorMessage}`);
     } finally {
       setIsSubmitting(false);

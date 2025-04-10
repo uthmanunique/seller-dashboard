@@ -1,19 +1,12 @@
 'use client';
 
-declare global {
-    interface Window {
-      api: AxiosInstance;
-    }
-  }
-
 import { useState, useEffect, ChangeEvent } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-toastify';
 import Cookies from 'js-cookie';
-import { AxiosInstance } from 'axios';
-import api from '@/src/lib/api';
-
+import api from '../../../lib/api'; // Adjust path as needed
+import { getLoginRedirectUrl } from '../../../config/env'; // Adjust path as needed
 
 interface SellerData {
   id: string;
@@ -71,7 +64,7 @@ export default function Settings() {
 
       if (!accessToken || !sellerDataString) {
         console.log('Settings - No tokens or seller data, redirecting to login');
-        router.push('http://localhost:3000/auth/login?role=seller');
+        router.push(getLoginRedirectUrl('seller')); // Use centralized login URL
         return;
       }
 
@@ -80,7 +73,7 @@ export default function Settings() {
         if (!sellerData.id) {
           console.error('Settings - No seller ID in sellerData');
           setError('Invalid session data. Please log in again.');
-          router.push('http://localhost:3000/auth/login?role=seller');
+          router.push(getLoginRedirectUrl('seller')); // Use centralized login URL
           return;
         }
 
@@ -109,7 +102,7 @@ export default function Settings() {
         console.error('Settings - Error processing settings data:', err);
         setError('Failed to load settings. Please try again.');
         toast.error('Failed to load settings.');
-        router.push('http://localhost:3000/auth/login?role=seller');
+        router.push(getLoginRedirectUrl('seller')); // Use centralized login URL
       } finally {
         setIsLoading(false);
       }
@@ -123,68 +116,68 @@ export default function Settings() {
       setError('Please select an image file.');
       return;
     }
-  
+
     setIsLoading(true);
     const accessToken = Cookies.get('accessToken');
     const sellerDataString = Cookies.get('sellerData');
-  
+
     if (!accessToken || !sellerDataString) {
-      router.push('http://localhost:3000/auth/login?role=seller');
+      router.push(getLoginRedirectUrl('seller')); // Use centralized login URL
       return;
     }
-  
+
     const sellerData = JSON.parse(sellerDataString);
     const formData = new FormData();
     formData.append('profilePictureUrl', file);
-  
+
     try {
       const response = await api.post(
         `/seller/settings/update-profile-picture?userType=SELLER&userId=${sellerData.id}`,
         formData,
         {
-          headers: { 'Content-Type': 'multipart/form-data' }, // Authorization added by interceptor
+          headers: { 'Content-Type': 'multipart/form-data' },
         }
       );
-  
+
       if (response.status === 200) {
-        const imageUrl = URL.createObjectURL(file); // Temporary URL
+        const imageUrl = response.data.profilePictureUrl || URL.createObjectURL(file); // Use server URL if provided
         setProfilePicture(imageUrl);
         const updatedSellerData = { ...sellerData, profilePicture: imageUrl };
         localStorage.setItem('sellerData', JSON.stringify(updatedSellerData));
         Cookies.set('sellerData', JSON.stringify(updatedSellerData));
         toast.success(response.data.message);
       }
-    } catch (err) {
-      console.error('Settings - Error uploading profile picture:', err);
+    } catch (err: any) {
+      console.error('Settings - Error uploading profile picture:', err.response?.data || err.message);
       setError('Failed to update profile picture.');
       toast.error('Failed to update profile picture.');
     } finally {
       setIsLoading(false);
     }
   };
-  
+
   const handleRequestOtp = async () => {
     setIsLoading(true);
     const accessToken = Cookies.get('accessToken');
     if (!accessToken) {
-      router.push('http://localhost:3000/auth/login?role=seller');
+      router.push(getLoginRedirectUrl('seller')); // Use centralized login URL
       return;
     }
-  
+
     try {
       const response = await api.post('/auth/generate-otp', { email: userDetails.email });
       if (response.status === 201) {
         toast.success(response.data.message);
       }
-    } catch (err) {
-      console.error('Settings - Error requesting OTP:', err);
+    } catch (err: any) {
+      console.error('Settings - Error requesting OTP:', err.response?.data || err.message);
       setError('Failed to request OTP.');
       toast.error('Failed to request OTP.');
     } finally {
       setIsLoading(false);
     }
   };
-  
+
   const handlePasswordSave = async () => {
     if (!currentPassword || !newPassword) {
       setError('Please enter current and new password.');
@@ -193,14 +186,14 @@ export default function Settings() {
     setIsLoading(true);
     const accessToken = Cookies.get('accessToken');
     const sellerDataString = Cookies.get('sellerData');
-  
+
     if (!accessToken || !sellerDataString) {
-      router.push('http://localhost:3000/auth/login?role=seller');
+      router.push(getLoginRedirectUrl('seller')); // Use centralized login URL
       return;
     }
-  
+
     const sellerData = JSON.parse(sellerDataString);
-  
+
     try {
       const payload = {
         currentPassword,
@@ -215,21 +208,21 @@ export default function Settings() {
         setNewPassword('');
         setIsPasswordEditable(false);
         toast.success(response.data.message);
-        // Log out: Clear cookies and local storage, then redirect
+        // Log out
         Cookies.remove('accessToken');
         Cookies.remove('sellerData');
         localStorage.removeItem('sellerData');
-        router.push('http://localhost:3000/auth/login?role=seller');
+        router.push(getLoginRedirectUrl('seller')); // Use centralized login URL
       }
-    } catch (err) {
-      console.error('Settings - Error changing password:', err);
+    } catch (err: any) {
+      console.error('Settings - Error changing password:', err.response?.data || err.message);
       setError('Failed to change password.');
       toast.error('Failed to change password.');
     } finally {
       setIsLoading(false);
     }
   };
-  
+
   const handleEmailSave = async () => {
     if (!newEmail || !otp) {
       setError('Please enter new email and OTP.');
@@ -238,14 +231,14 @@ export default function Settings() {
     setIsLoading(true);
     const accessToken = Cookies.get('accessToken');
     const sellerDataString = Cookies.get('sellerData');
-  
+
     if (!accessToken || !sellerDataString) {
-      router.push('http://localhost:3000/auth/login?role=seller');
+      router.push(getLoginRedirectUrl('seller')); // Use centralized login URL
       return;
     }
-  
+
     const sellerData = JSON.parse(sellerDataString);
-  
+
     try {
       const payload = {
         oldEmail: userDetails.email,
@@ -253,7 +246,7 @@ export default function Settings() {
         otp,
       };
       const response = await api.post(
-        `/seller/settings/change-email?userType=SELLER&userId=${sellerData.id}`,
+        `/seller/settings/update-email?userType=SELLER&userId=${sellerData.id}`, // Corrected endpoint
         payload
       );
       if (response.status === 200) {
@@ -265,33 +258,33 @@ export default function Settings() {
         setOtp('');
         setIsEmailEditable(false);
         toast.success(response.data.message);
-        // Log out: Clear cookies and local storage, then redirect
+        // Log out
         Cookies.remove('accessToken');
         Cookies.remove('sellerData');
         localStorage.removeItem('sellerData');
-        router.push('http://localhost:3000/auth/login?role=seller');
+        router.push(getLoginRedirectUrl('seller')); // Use centralized login URL
       }
-    } catch (err) {
-      console.error('Settings - Error changing email:', err);
+    } catch (err: any) {
+      console.error('Settings - Error changing email:', err.response?.data || err.message);
       setError('Failed to change email.');
       toast.error('Failed to change email.');
     } finally {
       setIsLoading(false);
     }
   };
-  
+
   const handleAlertUpdate = async () => {
     setIsLoading(true);
     const accessToken = Cookies.get('accessToken');
     const sellerDataString = Cookies.get('sellerData');
-  
+
     if (!accessToken || !sellerDataString) {
-      router.push('http://localhost:3000/auth/login?role=seller');
+      router.push(getLoginRedirectUrl('seller')); // Use centralized login URL
       return;
     }
-  
+
     const sellerData = JSON.parse(sellerDataString);
-  
+
     try {
       const payload = {
         is2faEnabled: userDetails.twoFactorAuth,
@@ -316,8 +309,8 @@ export default function Settings() {
         Cookies.set('sellerData', JSON.stringify(updatedSellerData));
         toast.success(response.data.message);
       }
-    } catch (err) {
-      console.error('Settings - Error updating alerts:', err);
+    } catch (err: any) {
+      console.error('Settings - Error updating alerts:', err.response?.data || err.message);
       setError('Failed to update alerts.');
       toast.error('Failed to update alerts.');
     } finally {

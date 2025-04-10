@@ -6,10 +6,9 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import { toast } from 'react-toastify';
-import Loader from '@/src/components/Loader';
 import Cookies from 'js-cookie';
 import api from '@/src/lib/api';
-import { AxiosError } from 'axios';
+import { getLoginRedirectUrl } from '@/src/config/env';
 
 interface SellerData {
   id: string;
@@ -18,12 +17,6 @@ interface SellerData {
   firstName?: string;
   lastName?: string;
   profilePicture?: string;
-}
-
-interface ApiErrorResponse {
-  message: string;
-  error?: string;
-  statusCode?: number;
 }
 
 interface Listing {
@@ -49,7 +42,7 @@ interface Listing {
   debtAndLiabilities: string[];
   preferredBuyerType: string;
   isPremiumSale: boolean;
-  businessImagesUrl: string[];
+  businessImagesUrls: string[];
 }
 
 interface UserData {
@@ -90,7 +83,9 @@ export default function AddListingClient() {
   const listingId = searchParams.get('listingId');
   const [isEditMode, setIsEditMode] = useState(false);
   const [step, setStep] = useState(1);
+  const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [user, setUser] = useState<UserData>({ name: '', email: '', profilePicture: '/profile.png' });
   const [formData, setFormData] = useState<FormData>({
     role: 'Owner',
@@ -119,45 +114,59 @@ export default function AddListingClient() {
   });
 
   useEffect(() => {
-    const initializeUser = () => {
+    const initializeData = async () => {
+      setLoading(true);
+      console.log('AddListingClient - initializeData: Starting');
+
       const accessToken = Cookies.get('accessToken');
       const sellerDataString = Cookies.get('sellerData');
-    
+
       if (!accessToken || !sellerDataString) {
-        router.push('/auth/login?role=seller');
+        console.log('AddListingClient - No tokens or seller data, redirecting to login');
+        router.push(getLoginRedirectUrl('seller'));
         return;
       }
-    
+
+      let sellerData: SellerData;
       try {
-        const sellerData: SellerData = JSON.parse(sellerDataString);
+        sellerData = JSON.parse(sellerDataString);
+        console.log('AddListingClient - Seller Data from cookies:', sellerData);
         if (!sellerData.id) {
-          toast.error('Invalid session data. Please log in again.');
-          router.push('/auth/login?role=seller');
-          return;
-        }
-    
-        setFormData((prev) => ({ ...prev, sellerId: sellerData.id }));
-        setUser({
-          name: `${sellerData.firstName || ''} ${sellerData.lastName || ''}`.trim() || 'User',
-          email: sellerData.email || '',
-          profilePicture: sellerData.profilePicture || '/profile.png', // Changed from profileImage
-        });
-    
-        if (listingId) {
-          fetchListing(sellerData.id, accessToken);
+          throw new Error('Invalid seller ID');
         }
       } catch (err) {
-        console.error('Error parsing seller data:', err);
-        router.push('/auth/login?role=seller');
+        console.error('AddListingClient - Error parsing seller data:', err);
+        setError('Invalid session data. Please log in again.');
+        router.push(getLoginRedirectUrl('seller'));
+        return;
       }
+
+      setFormData((prev) => ({ ...prev, sellerId: sellerData.id }));
+      setUser({
+        name: `${sellerData.firstName || ''} ${sellerData.lastName || ''}`.trim() || 'User',
+        email: sellerData.email || '',
+        profilePicture: sellerData.profilePicture || '/profile.png',
+      });
+
+      if (listingId) {
+        await fetchListing(sellerData.id, listingId);
+      } else {
+        setIsEditMode(false);
+      }
+
+      setLoading(false);
+      console.log('AddListingClient - initializeData: Ended');
     };
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const fetchListing = async (sellerId: string, accessToken: string) => {
+    const fetchListing = async (sellerId: string, listingId: string) => {
       try {
+        console.log('AddListingClient - fetchListing: Fetching listing', listingId);
         const response = await api.get(`/seller/listings/fetch-all/${sellerId}`);
-        const listings: Listing[] = response.data.listings; // Adjust based on actual response structure
+        console.log('AddListingClient - fetchListing: API Response:', response.data);
+
+        const listings: Listing[] = response.data.listings;
         const listing = listings.find((l) => l.id === listingId);
+
         if (listing) {
           setFormData({
             role: listing.role || 'Owner',
@@ -181,27 +190,26 @@ export default function AddListingClient() {
             debtAndLiabilities: listing.debtAndLiabilities || [],
             preferredBuyerType: listing.preferredBuyerType || '',
             listingType: listing.isPremiumSale ? 'Rebrivo Premium' : 'Standard Listing',
-            images: listing.businessImagesUrl || [],
+            images: listing.businessImagesUrls || [],
             sellerId: sellerId,
           });
           setIsEditMode(true);
+          console.log('AddListingClient - fetchListing: Listing loaded', listing);
         } else {
-          toast.error('Listing not found in seller’s listings.');
+          console.log('AddListingClient - fetchListing: Listing not found');
+          setError('Listing not found in seller’s listings.');
           setIsEditMode(false);
+          toast.error('Listing not found.');
         }
       } catch (err) {
-        console.error('Error fetching listing:', err);
-        const axiosError = err as AxiosError;
-        if (axiosError.response?.status === 404) {
-          toast.error('Fetch endpoint not found on server.');
-        } else {
-          toast.error('Failed to load listing data.');
-        }
+        console.error('AddListingClient - fetchListing: Error:', err);
+        setError('Failed to load listing data. Please try again.');
+        toast.error('Failed to load listing data.');
         setIsEditMode(false);
       }
     };
 
-    initializeUser();
+    initializeData();
   }, [listingId, router]);
 
   const handleSubmit = async () => {
@@ -210,36 +218,30 @@ export default function AddListingClient() {
       return;
     }
 
+    console.log('AddListingClient - handleSubmit: Starting');
     const accessToken = Cookies.get('accessToken');
     const sellerDataString = Cookies.get('sellerData');
 
     if (!accessToken || !sellerDataString) {
-      toast.error('Please log in to submit a listing.');
-      router.push('/auth/login?role=seller');
+      console.log('AddListingClient - handleSubmit: No tokens, redirecting');
+      router.push(getLoginRedirectUrl('seller'));
       return;
     }
 
     let sellerData: SellerData;
     try {
       sellerData = JSON.parse(sellerDataString);
+      console.log('AddListingClient - handleSubmit: Seller Data:', sellerData);
     } catch (err) {
-      console.error('Error parsing seller data:', err);
+      console.error('AddListingClient - handleSubmit: Error parsing seller data:', err);
       toast.error('Invalid session data. Please log in again.');
-      router.push('/auth/login?role=seller');
+      router.push(getLoginRedirectUrl('seller'));
       return;
     }
 
     setIsSubmitting(true);
 
     try {
-      const config = {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-        },
-        timeout: 60000,
-      };
-
-      let response;
       if (isEditMode) {
         const updateData = {
           businessName: formData.businessName,
@@ -253,11 +255,14 @@ export default function AddListingClient() {
           isNegotiable: formData.isNegotiable === 'Yes',
           isPremiumSale: formData.listingType === 'Rebrivo Premium',
         };
-        response = await api.patch(
-          `/seller/listings/update-listing/${listingId}`,
-          updateData,
-          { ...config, headers: { ...config.headers, 'Content-Type': 'application/json' } }
-        );
+        console.log('AddListingClient - handleSubmit: Updating listing with data:', updateData);
+        const response = await api.patch(`/seller/listings/update-listing/${listingId}`, updateData);
+        console.log('AddListingClient - handleSubmit: Update Response:', response.data);
+
+        if (response.status === 200) {
+          toast.success('Listing updated successfully!');
+          router.push('/dashboard/listings');
+        }
       } else {
         const formDataToSend = new FormData();
         formDataToSend.append('businessCategoryType', formData.businessCategoryType);
@@ -299,27 +304,25 @@ export default function AddListingClient() {
           }
         });
 
-        response = await api.post('/seller/listings/add', formDataToSend, {
-          ...config,
-          headers: { ...config.headers, 'Content-Type': 'multipart/form-data' },
+        console.log('AddListingClient - handleSubmit: Creating listing with data:', formDataToSend);
+        const response = await api.post('/seller/listings/add', formDataToSend, {
+          headers: { 'Content-Type': 'multipart/form-data' },
         });
-      }
+        console.log('AddListingClient - handleSubmit: Create Response:', response.data);
 
-      if (response.status === 201 || response.status === 200) {
-        toast.success(isEditMode ? 'Listing updated successfully!' : 'Listing sent for review successfully!');
-        router.push('/dashboard/listings');
+        if (response.status === 201) {
+          toast.success('Listing sent for review successfully!');
+          router.push('/dashboard/listings');
+        }
       }
-    } catch (error) {
-      console.error('Raw error:', error);
-      const axiosError = error as AxiosError<ApiErrorResponse>;
-      if (axiosError.response?.status === 404) {
-        toast.error(`API endpoint not found. Please check server configuration.`);
-      } else {
-        const errorMessage = axiosError.response?.data?.message || 'Bad Request - check console';
-        toast.error(`Failed to ${isEditMode ? 'update' : 'submit'} listing: ${errorMessage}`);
-      }
+    } catch (err: any) {
+      console.error('AddListingClient - handleSubmit: Error:', err.response?.data || err.message);
+      const errorMessage = err.response?.data?.message || 'Failed to process request.';
+      setError(errorMessage);
+      toast.error(`Failed to ${isEditMode ? 'update' : 'submit'} listing: ${errorMessage}`);
     } finally {
       setIsSubmitting(false);
+      console.log('AddListingClient - handleSubmit: Ended');
     }
   };
 
@@ -393,29 +396,51 @@ export default function AddListingClient() {
     }
   };
 
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-screen">
+        <Image src="/loader.gif" alt="Loading" width={32} height={32} className="animate-spin" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-4 text-center">
+        <p className="text-red-500">{error}</p>
+        <button
+          onClick={() => window.location.reload()}
+          className="mt-4 bg-[#F26E52] text-white px-4 py-2 rounded-md text-sm"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="flex">
       <div className="hidden md:block w-64 p-4 bg-white border-r border-gray-200">
-  <div className="flex flex-col items-center">
-    <Image
-      src={user.profilePicture}
-      alt="Profile"
-      width={80}
-      height={80}
-      className="rounded-full mb-2"
-    />
-    <h3 className="text-sm font-semibold text-[#011631]">{user.name}</h3>
-    <div className="flex items-center space-x-1 mt-1">
-      <Image src="/message.png" alt="Email" width={12} height={12} />
-      <p className="text-xs text-gray-600">{user.email}</p>
-    </div>
-    {user.profilePicture === '/profile.png' && (
-      <Link href="/dashboard/settings" className="text-xs text-[#F26E52] mt-2">
-        Please add your Profile
-      </Link>
-    )}
-  </div>
-</div>
+        <div className="flex flex-col items-center">
+          <Image
+            src={user.profilePicture}
+            alt="Profile"
+            width={80}
+            height={80}
+            className="rounded-full mb-2"
+          />
+          <h3 className="text-sm font-semibold text-[#011631]">{user.name}</h3>
+          <div className="flex items-center space-x-1 mt-1">
+            <Image src="/message.png" alt="Email" width={12} height={12} />
+            <p className="text-xs text-gray-600">{user.email}</p>
+          </div>
+          {user.profilePicture === '/profile.png' && (
+            <Link href="/dashboard/settings" className="text-xs text-[#F26E52] mt-2">
+              Please add your Profile
+            </Link>
+          )}
+        </div>
+      </div>
 
       <div className="flex-1 p-4 overflow-y-auto h-[calc(100vh-72px)]">
         <div className="flex items-center justify-center mb-6">
@@ -1140,8 +1165,13 @@ export default function AddListingClient() {
                 disabled={isSubmitting || !isFormComplete()}
                 className={`h-12 rounded-lg bg-[#F26E52] px-6 text-sm font-semibold text-white transition-colors hover:bg-[#e65a3e] disabled:opacity-50 flex items-center justify-center w-40 ${!isFormComplete() ? 'cursor-not-allowed' : ''}`}
               >
-                {isSubmitting && <Loader />}
-                {!isSubmitting && (isEditMode ? 'Update Listing' : 'Send for Review')}
+                {isSubmitting ? (
+                  <Image src="/loader.gif" alt="Submitting" width={20} height={20} className="animate-spin" />
+                ) : isEditMode ? (
+                  'Update Listing'
+                ) : (
+                  'Send for Review'
+                )}
               </button>
             </div>
           </div>

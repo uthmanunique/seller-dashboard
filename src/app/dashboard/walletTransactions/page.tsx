@@ -3,10 +3,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import WithdrawFundsOverlay from '@/src/components/WithdrawFundsOverlay'; // Ensure this file exists
-import api from '@/src/lib/api';
+import WithdrawFundsOverlay from '../../../components/WithdrawFundsOverlay'; // Adjust path as needed
+import api from '../../../lib/api'; // Adjust path as needed
 import Cookies from 'js-cookie';
-import axios from 'axios';
+import { getLoginRedirectUrl } from '../../../config/env'; // Adjust path as needed
 
 interface Transaction {
   id: string;
@@ -48,12 +48,19 @@ export default function WalletTransactions() {
     const sellerDataString = Cookies.get('sellerData');
 
     if (!accessToken || !sellerDataString) {
-      router.push('http://localhost:3000/auth/login?role=seller');
+      router.push(getLoginRedirectUrl('seller')); // Use centralized login URL
       return;
     }
 
-    const sellerData = JSON.parse(sellerDataString);
-    const sellerId = sellerData.id;
+    let sellerId: string;
+    try {
+      const sellerData = JSON.parse(sellerDataString);
+      sellerId = sellerData.id;
+    } catch (err) {
+      console.error('WalletTransactions - Error parsing seller data:', err);
+      router.push(getLoginRedirectUrl('seller')); // Use centralized login URL
+      return;
+    }
 
     try {
       const walletResponse = await api.get('/wallets/fetch-info', {
@@ -79,14 +86,14 @@ export default function WalletTransactions() {
         createdAt: tx.createdAt || new Date().toISOString(),
       }));
       setTransactions(mappedTransactions);
-    } catch (error: unknown) {
-      if (axios.isAxiosError(error) && error.response?.status === 404) {
+    } catch (error: any) {
+      if (error.response?.status === 404) {
         setIsWalletActivated(false);
         setBalance(0);
         setTransactions([]);
       } else {
-        console.error('Error fetching wallet data:', error);
-        router.push('http://localhost:3000/auth/login?role=seller');
+        console.error('WalletTransactions - Error fetching wallet data:', error.response?.data || error.message);
+        router.push(getLoginRedirectUrl('seller')); // Use centralized login URL
       }
     } finally {
       setIsLoading(false);
@@ -127,7 +134,7 @@ export default function WalletTransactions() {
 
   const renderTrackOverlay = () => {
     if (!isTrackOverlayOpen || !selectedTransaction) return null;
-  
+
     const { status, id, amount, createdAt, description } = selectedTransaction;
     const headings = {
       processing: 'Your Payment is Being Processed',
@@ -149,7 +156,7 @@ export default function WalletTransactions() {
       completed: 'Date Received',
       failed: 'Date Attempted',
     };
-  
+
     return (
       <div className="fixed inset-0 bg-gradient-to-br from-gray-800/50 to-gray-900/50 flex justify-center items-center z-50">
         <div className="bg-white p-6 rounded-lg w-full max-w-md relative">
@@ -371,9 +378,7 @@ export default function WalletTransactions() {
           <button
             onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
             disabled={currentPage === 1}
-            className={`p-2 rounded-md ${
-              currentPage === 1 ? 'bg-[#F26E52]' : 'bg-[#F26E52]'
-            }`}
+            className={`p-2 rounded-md ${currentPage === 1 ? 'bg-gray-300' : 'bg-[#F26E52]'}`}
           >
             <Image src="/CaretLeft.png" alt="Previous" width={16} height={16} />
           </button>
@@ -391,9 +396,7 @@ export default function WalletTransactions() {
           <button
             onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
             disabled={currentPage === totalPages}
-            className={`p-2 rounded-md ${
-              currentPage === totalPages ? 'bg-[#F26E52]' : 'bg-[#F26E52]'
-            }`}
+            className={`p-2 rounded-md ${currentPage === totalPages ? 'bg-gray-300' : 'bg-[#F26E52]'}`}
           >
             <Image src="/CaretRight.png" alt="Next" width={16} height={16} />
           </button>

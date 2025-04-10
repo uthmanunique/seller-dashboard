@@ -3,10 +3,10 @@
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import api from '@/src/lib/api';
+import api from '../../../lib/api'; // Import centralized API instance
 import Cookies from 'js-cookie';
 import { toast } from 'react-toastify';
-import axios from 'axios';
+import { getLoginRedirectUrl } from '../../../config/env'; // Import centralized login URL
 
 export default function ContactPage() {
   const [firstName, setFirstName] = useState('');
@@ -26,7 +26,7 @@ export default function ContactPage() {
     const sellerDataString = Cookies.get('sellerData');
 
     if (!accessToken || !sellerDataString) {
-      router.push('http://localhost:3000/auth/login?role=seller');
+      router.push(getLoginRedirectUrl('seller')); // Use centralized login URL
       return;
     }
 
@@ -37,7 +37,7 @@ export default function ContactPage() {
       setEmail(sellerData.email || '');
     } catch (err) {
       console.error('Error parsing seller data:', err);
-      router.push('http://localhost:3000/auth/login?role=seller');
+      router.push(getLoginRedirectUrl('seller')); // Use centralized login URL
     } finally {
       setIsLoading(false);
     }
@@ -62,7 +62,7 @@ export default function ContactPage() {
     const sellerDataString = Cookies.get('sellerData');
 
     if (!accessToken || !sellerDataString) {
-      router.push('http://localhost:3000/auth/login?role=seller');
+      router.push(getLoginRedirectUrl('seller')); // Use centralized login URL
       return;
     }
 
@@ -83,16 +83,10 @@ export default function ContactPage() {
         setEmail('');
         setMessage('');
       }
-    } catch (err) {
-      if (axios.isAxiosError(err)) {
-        console.error('Error submitting contact form:', err.response?.data || err.message);
-        setError('Failed to send message. Please try again.');
-        toast.error('Failed to send message.');
-      } else {
-        console.error('Unexpected error:', err);
-        setError('An unexpected error occurred.');
-        toast.error('An unexpected error occurred.');
-      }
+    } catch (err: any) {
+      console.error('Error submitting contact form:', err.response?.data || err.message);
+      setError('Failed to send message. Please try again.');
+      toast.error('Failed to send message.');
     } finally {
       setIsSubmitting(false);
     }

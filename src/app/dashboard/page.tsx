@@ -1,76 +1,75 @@
-// src/app/dashboard/page.tsx
 'use client';
 
 import Image from 'next/image';
 import Link from 'next/link';
 import { useState, useEffect, useCallback } from 'react';
 import Cookies from 'js-cookie';
-import axios from 'axios';
+import api from '../../lib/api'; // Import centralized API instance
+import { getLoginRedirectUrl } from '../../config/env'; // Import centralized login URL
 
 interface Listing {
-    id: string;
-    name: string;
-    value: string;
-    category: string;
-    location: string;
-    status: string;
-    views: number;
-    inquiries: number;
-    images: string[];
-    createdAt: string;
-  }
-  
-  interface Transaction {
-    _id: string;
-    transactionRef: string;
-    receiver: { id: string; name: string };
-    businessName?: string;
-    amount: string;
-    status: string;
-    type?: 'credit' | 'debit';
-    description?: string;
-    createdAt: string;
-  }
-  
-  interface DashboardData {
-    reviewsCount: number;
-    activeListingCount: number;
-    soldListingCount: number;
-    totalRevenue: number;
-    listings: Listing[];
-    transactions: Transaction[];
-  }
-  
-  interface ApiListing {
-    id: string;
-    businessName: string;
-    businessCategoryType: string;
-    location: string;
-    status: string;
-    price: number;
-    listOfBuyerRequestingService: string[];
-    businessImagesUrls: string[];
-    createdAt: string;
-  }
-  
-  interface ApiTransaction {
-    _id: string;
-    transactionRef: string;
-    receiver: { id: string; name: string };
-    amount: string;
-    status: string;
-    createdAt: string;
-  }
-  
-  interface ApiDashboardData {
-    reviewsCount: number;
-    activeListingCount: number;
-    soldListingCount: number;
-    totalRevenue: number;
-    listings: ApiListing[];
-    transactions: ApiTransaction[];
-  }
-  
+  id: string;
+  name: string;
+  value: string;
+  category: string;
+  location: string;
+  status: string;
+  views: number;
+  inquiries: number;
+  images: string[];
+  createdAt: string;
+}
+
+interface Transaction {
+  _id: string;
+  transactionRef: string;
+  receiver: { id: string; name: string };
+  businessName?: string;
+  amount: string;
+  status: string;
+  type?: 'credit' | 'debit';
+  description?: string;
+  createdAt: string;
+}
+
+interface DashboardData {
+  reviewsCount: number;
+  activeListingCount: number;
+  soldListingCount: number;
+  totalRevenue: number;
+  listings: Listing[];
+  transactions: Transaction[];
+}
+
+interface ApiListing {
+  id: string;
+  businessName: string;
+  businessCategoryType: string;
+  location: string;
+  status: string;
+  price: number;
+  listOfBuyerRequestingService: string[];
+  businessImagesUrls: string[];
+  createdAt: string;
+}
+
+interface ApiTransaction {
+  _id: string;
+  transactionRef: string;
+  receiver: { id: string; name: string };
+  amount: string;
+  status: string;
+  createdAt: string;
+}
+
+interface ApiDashboardData {
+  reviewsCount: number;
+  activeListingCount: number;
+  soldListingCount: number;
+  totalRevenue: number;
+  listings: ApiListing[];
+  transactions: ApiTransaction[];
+}
 
 export default function DashboardOverview() {
   const [hasPendingReview, setHasPendingReview] = useState<boolean>(false);
@@ -85,26 +84,25 @@ export default function DashboardOverview() {
   const fetchData = useCallback(async () => {
     setIsLoading(true);
     console.log('DashboardOverview fetchData - Starting');
-  
+
     const accessToken = Cookies.get('accessToken');
     const sellerDataString = Cookies.get('sellerData');
-  
+
     if (!accessToken || !sellerDataString) {
       console.log('DashboardOverview - No tokens, redirecting to login');
-      window.location.href = 'http://localhost:3000/auth/login?role=seller';
+      window.location.href = getLoginRedirectUrl('seller'); // Use centralized login URL
       return;
     }
-  
+
     try {
       const sellerData = JSON.parse(sellerDataString);
       console.log('DashboardOverview - Seller Data from cookies:', sellerData);
-  
-      const response = await axios.get<ApiDashboardData>(
-        `https://api-rebrivo.onrender.com/v1/api/seller/dashboard/details/${sellerData.id}`,
-        { headers: { Authorization: `Bearer ${accessToken}` } }
-      );
+
+      const response = await api.get<ApiDashboardData>(
+        `/seller/dashboard/details/${sellerData.id}`
+      ); // Use api instance
       console.log('DashboardOverview - Dashboard Data from API:', response.data);
-  
+
       const apiData = response.data;
       const dashboardData: DashboardData = {
         reviewsCount: apiData.reviewsCount || 0,
@@ -133,7 +131,7 @@ export default function DashboardOverview() {
           createdAt: tx.createdAt,
         })),
       };
-  
+
       setDashboardData(dashboardData);
       setListings(dashboardData.listings.slice(0, 4));
       setSelectedListing(dashboardData.listings[0] || null);
@@ -199,7 +197,7 @@ export default function DashboardOverview() {
 
   const renderTrackOverlay = () => {
     if (!isTrackOverlayOpen || !selectedTransaction) return null;
-  
+
     const { status, _id, amount, createdAt, description } = selectedTransaction;
     const headings = {
       pending: 'Your Payment is Being Processed',
@@ -221,13 +219,13 @@ export default function DashboardOverview() {
       success: 'Date Received',
       failed: 'Date Attempted',
     };
-  
+
     const formatDate = (dateString: string) =>
       new Date(dateString).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
     const formatAmount = (amount: string) => `₦${parseFloat(amount).toLocaleString()}`;
-  
+
     return (
-        <div className="fixed inset-0 bg-gradient-to-br from-gray-800/50 to-gray-900/50 flex justify-center items-center z-50">
+      <div className="fixed inset-0 bg-gradient-to-br from-gray-800/50 to-gray-900/50 flex justify-center items-center z-50">
         <div className="bg-white p-6 rounded-lg w-full max-w-md relative">
           <button onClick={() => setIsTrackOverlayOpen(false)} className="absolute top-4 right-4">
             <Image src="/cancel.png" alt="Close" width={16} height={16} />
@@ -296,7 +294,7 @@ export default function DashboardOverview() {
           </button>
         </Link>
       </div>
-  
+
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-white p-6 rounded-md shadow-xl flex items-center space-x-6 transition-transform hover:scale-105 hover:shadow-lg">
           <Image src="/active.png" alt="Active" width={60} height={60} />
@@ -335,25 +333,7 @@ export default function DashboardOverview() {
           </div>
         </div>
       </div>
-  
-      {/* Commented out pending review section */}
-      {/* {hasPendingReview && listings.every((listing) => listing.status === 'Review') ? (
-        <div className="bg-white p-18 rounded-md shadow-sm flex flex-col items-center text-center">
-          <Image
-            src="/review-pending.png"
-            alt="Review Pending"
-            width={120}
-            height={120}
-            className="mb-4"
-          />
-          <h2 className="text-lg font-semibold text-[#011631] mb-2">
-            Your Listing is Being Reviewed by the Super Admin
-          </h2>
-          <p className="text-xs text-gray-600 mb-4">
-            Immediately your businesses are approved, you will see them here. This process might take 48 to 96 hours from the day of review.
-          </p>
-        </div>
-      ) : ( */}
+
       <>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="bg-white p-6 rounded-md shadow-sm">
@@ -442,7 +422,7 @@ export default function DashboardOverview() {
               <p className="text-xs text-gray-600">No listings available.</p>
             )}
           </div>
-  
+
           <div className="bg-white p-6 rounded-md shadow-sm">
             <h2 className="text-lg font-semibold text-[#011631] mb-4">All Listings</h2>
             <div className="space-y-4">
@@ -486,105 +466,104 @@ export default function DashboardOverview() {
             </div>
           </div>
         </div>
-          <div className="bg-white p-6 rounded-md shadow-sm">
-            <h2 className="text-lg font-semibold text-[#011631] mb-4">Escrow Summary</h2>
-            <div className="bg-[#F26E52] text-white p-6 rounded-md flex justify-between items-center mb-4">
-                <div className="flex items-center space-x-2">
-                <Image src="/escrow.png" alt="Transaction Status" width={48} height={48} />
-                <p className="text-xl font-semibold">Transaction Status</p>
-                </div>
-                <div className="flex space-x-6 align-center">
-                <div>
-                    <p className="text-xl">Active</p>
-                    <p className="text-lg font-semibold">
-                    {dashboardData?.transactions.filter((tx) => tx.status === 'PENDING').length || 0}
-                    </p>
-                </div>
-                <div>
-                    <p className="text-xl">Pending</p>
-                    <p className="text-lg font-semibold">
-                    {dashboardData?.transactions.filter((tx) => tx.status === 'PENDING').length || 0}
-                    </p>
-                </div>
-                <div>
-                    <p className="text-xl">Received</p>
-                    <p className="text-lg font-semibold">
-                    {dashboardData?.transactions.filter((tx) => tx.status === 'SUCCESS').length || 0}
-                    </p>
-                </div>
-                </div>
+        <div className="bg-white p-6 rounded-md shadow-sm">
+          <h2 className="text-lg font-semibold text-[#011631] mb-4">Escrow Summary</h2>
+          <div className="bg-[#F26E52] text-white p-6 rounded-md flex justify-between items-center mb-4">
+            <div className="flex items-center space-x-2">
+              <Image src="/escrow.png" alt="Transaction Status" width={48} height={48} />
+              <p className="text-xl font-semibold">Transaction Status</p>
             </div>
-            <div className="overflow-x-auto">
-                <table className="w-full text-left">
-                <thead>
-                    <tr className="bg-[#FFF1EE]">
-                    <th className="p-3 text-sm font-semibold text-gray-600">Transaction ID</th>
-                    <th className="p-3 text-sm font-semibold text-gray-600">Buyer Name</th>
-                    <th className="p-3 text-sm font-semibold text-gray-600">Business Sold</th>
-                    <th className="p-3 text-sm font-semibold text-gray-600">Escrow Amount</th>
-                    <th className="p-3 text-sm font-semibold text-gray-600">Status</th>
-                    <th className="p-3 text-sm font-semibold text-gray-600">Action</th>
+            <div className="flex space-x-6 align-center">
+              <div>
+                <p className="text-xl">Active</p>
+                <p className="text-lg font-semibold">
+                  {dashboardData?.transactions.filter((tx) => tx.status === 'PENDING').length || 0}
+                </p>
+              </div>
+              <div>
+                <p className="text-xl">Pending</p>
+                <p className="text-lg font-semibold">
+                  {dashboardData?.transactions.filter((tx) => tx.status === 'PENDING').length || 0}
+                </p>
+              </div>
+              <div>
+                <p className="text-xl">Received</p>
+                <p className="text-lg font-semibold">
+                  {dashboardData?.transactions.filter((tx) => tx.status === 'SUCCESS').length || 0}
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="bg-[#FFF1EE]">
+                  <th className="p-3 text-sm font-semibold text-gray-600">Transaction ID</th>
+                  <th className="p-3 text-sm font-semibold text-gray-600">Buyer Name</th>
+                  <th className="p-3 text-sm font-semibold text-gray-600">Business Sold</th>
+                  <th className="p-3 text-sm font-semibold text-gray-600">Escrow Amount</th>
+                  <th className="p-3 text-sm font-semibold text-gray-600">Status</th>
+                  <th className="p-3 text-sm font-semibold text-gray-600">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dashboardData?.transactions.length ? (
+                  dashboardData.transactions.map((tx) => (
+                    <tr key={tx._id} className="border-b border-gray-200">
+                      <td className="p-3 text-sm text-gray-600">{tx.transactionRef.slice(0, 15)}...</td>
+                      <td className="p-3 text-sm text-gray-600">{tx.receiver.name}</td>
+                      <td className="p-3 text-sm text-gray-600">{tx.businessName || 'N/A'}</td>
+                      <td className="p-3 text-sm text-gray-600">₦{parseFloat(tx.amount).toLocaleString()}</td>
+                      <td className="p-3">
+                        <span
+                          className={`text-sm px-3 py-1 rounded-full ${
+                            tx.status === 'SUCCESS'
+                              ? 'bg-green-100 text-green-600'
+                              : tx.status === 'PENDING'
+                              ? 'bg-yellow-100 text-yellow-600'
+                              : 'bg-red-100 text-red-600'
+                          }`}
+                        >
+                          {tx.status === 'SUCCESS'
+                            ? 'Completed'
+                            : tx.status.charAt(0).toUpperCase() + tx.status.slice(1).toLowerCase()}
+                        </span>
+                      </td>
+                      <td className="p-3">
+                        <button
+                          onClick={() => {
+                            setSelectedTransaction({
+                              _id: tx._id,
+                              transactionRef: tx.transactionRef,
+                              receiver: tx.receiver,
+                              businessName: tx.businessName,
+                              amount: tx.amount,
+                              status: tx.status,
+                              type: tx.type || 'credit',
+                              description: tx.description || 'Escrow Payment',
+                              createdAt: tx.createdAt || new Date().toISOString(),
+                            });
+                            setIsTrackOverlayOpen(true);
+                          }}
+                          className="text-[#F26E52] text-xs hover:underline"
+                        >
+                          View
+                        </button>
+                      </td>
                     </tr>
-                </thead>
-                <tbody>
-                    {dashboardData?.transactions.length ? (
-                    dashboardData.transactions.map((tx) => (
-                        <tr key={tx._id} className="border-b border-gray-200">
-                        <td className="p-3 text-sm text-gray-600">{tx.transactionRef.slice(0, 15)}...</td>
-                        <td className="p-3 text-sm text-gray-600">{tx.receiver.name}</td>
-                        <td className="p-3 text-sm text-gray-600">{tx.businessName || 'N/A'}</td>
-                        <td className="p-3 text-sm text-gray-600">₦{parseFloat(tx.amount).toLocaleString()}</td>
-                        <td className="p-3">
-                            <span
-                            className={`text-sm px-3 py-1 rounded-full ${
-                                tx.status === 'SUCCESS'
-                                ? 'bg-green-100 text-green-600'
-                                : tx.status === 'PENDING'
-                                ? 'bg-yellow-100 text-yellow-600'
-                                : 'bg-red-100 text-red-600'
-                            }`}
-                            >
-                            {tx.status === 'SUCCESS'
-                                ? 'Completed'
-                                : tx.status.charAt(0).toUpperCase() + tx.status.slice(1).toLowerCase()}
-                            </span>
-                        </td>
-                        <td className="p-3">
-                            <button
-                            onClick={() => {
-                                setSelectedTransaction({
-                                _id: tx._id,
-                                transactionRef: tx.transactionRef,
-                                receiver: tx.receiver,
-                                businessName: tx.businessName,
-                                amount: tx.amount,
-                                status: tx.status,
-                                type: tx.type || 'credit',
-                                description: tx.description || 'Escrow Payment',
-                                createdAt: tx.createdAt || new Date().toISOString(),
-                                });
-                                setIsTrackOverlayOpen(true);
-                            }}
-                            className="text-[#F26E52] text-xs hover:underline"
-                            >
-                            View
-                            </button>
-                        </td>
-                        </tr>
-                    ))
-                    ) : (
-                    <tr>
-                        <td colSpan={6} className="p-3 text-center text-gray-600">
-                        No transaction status yet.
-                        </td>
-                    </tr>
-                    )}
-                </tbody>
-                </table>
-            </div>
-            </div>
-        </>
-      {/* )} */}
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={6} className="p-3 text-center text-gray-600">
+                      No transaction status yet.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </>
       {renderTrackOverlay()}
     </div>
   );
