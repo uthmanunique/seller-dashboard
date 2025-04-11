@@ -1,8 +1,8 @@
 // Centralized URLs
 export const config = {
   API_BASE_URL: 'https://api-rebrivo.onrender.com/v1/api',
-  MAIN_WEBSITE_BASE_URL: 'https://rebrivo.vercel.app', // Removed localhost conditional
-  DASHBOARD_BASE_URL: 'https://seller-dashboard-three.vercel.app', // Updated to deployed dashboard URL
+  MAIN_WEBSITE_BASE_URL: 'https://rebrivo.vercel.app',
+  DASHBOARD_BASE_URL: 'https://rebrivo-seller.vercel.app',
 };
 
 export const getLoginRedirectUrl = (role: string = 'seller') => {
