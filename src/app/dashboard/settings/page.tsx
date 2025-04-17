@@ -159,15 +159,21 @@ export default function Settings() {
   };
 
   const handleRequestOtp = async () => {
+    if (!newEmail) {
+      setError('Please enter a new email address.');
+      toast.error('Please enter a new email address.');
+      return;
+    }
+  
     setIsLoading(true);
     const accessToken = Cookies.get('accessToken');
     if (!accessToken) {
       router.push(getLoginRedirectUrl('seller'));
       return;
     }
-
+  
     try {
-      const response = await api.post('/auth/generate-otp', { email: userDetails.email });
+      const response = await api.post('/auth/generate-otp', { email: newEmail });
       if (response.status === 201) {
         toast.success(response.data.message);
       }
@@ -249,7 +255,7 @@ export default function Settings() {
         otp,
       };
       const response = await api.post(
-        `/seller/settings/update-email?userType=SELLER&userId=${sellerData.id}`,
+        `/seller/settings/change-email?userType=SELLER&userId=${sellerData.id}`,
         payload
       );
       if (response.status === 200) {

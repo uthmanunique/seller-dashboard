@@ -5,9 +5,9 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-toastify';
-import api from '../../../lib/api'; // Import centralized API instance
+import api from '../../../lib/api';
 import Cookies from 'js-cookie';
-import { getLoginRedirectUrl } from '../../../config/env'; // Import centralized login URL
+import { getLoginRedirectUrl } from '../../../config/env';
 
 interface Listing {
   id: string;
@@ -38,98 +38,69 @@ export default function Listings() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showDeactivationModal, setShowDeactivationModal] = useState(false);
+  const [deactivationReason, setDeactivationReason] = useState('');
+  const [deactivationComment, setDeactivationComment] = useState('');
   const router = useRouter();
 
-  const tabs = ['All', 'Approved', 'Review', 'Sold'];
+  const tabs = ['All', 'Approved', 'Review', 'Sold', 'Deactivation Requested'];
+
+  const deactivationReasons = [
+    'Business already sold outside Rebrivo',
+    'Changed my mind about selling',
+    'New confidential information to protect',
+    'Need to re-evaluate my pricing/positioning',
+  ];
 
   useEffect(() => {
     const fetchListings = async () => {
       setLoading(true);
-      console.log('Listings fetchListings - Starting');
-
       const accessToken = Cookies.get('accessToken');
       const sellerDataString = Cookies.get('sellerData');
 
       if (!accessToken || !sellerDataString) {
-        console.log('Listings - No tokens or seller data, redirecting to login');
-        router.push(getLoginRedirectUrl('seller')); // Use centralized login URL
+        router.push(getLoginRedirectUrl('seller'));
         return;
       }
 
       try {
         const sellerData = JSON.parse(sellerDataString);
-        console.log('Listings - Seller Data from cookies:', sellerData);
-
-        const response = await api.get(
-          `/seller/listings/fetch-all/${sellerData.id}`
-        ); // Use api instance
-        console.log('Listings - API Response:', response.data);
-
+        const response = await api.get(`/seller/listings/fetch-all/${sellerData.id}`);
         if (response.status === 200) {
-          const fetchedListings = response.data.listings.map((listing: {
-            id: string;
-            businessName: string;
-            businessCategoryType: string;
-            location: string;
-            price: number;
-            status: string;
-            unlockedByBuyers?: string[];
-            listOfBuyerRequestingService?: string[];
-            businessImagesUrls: string[];
-            yearEstablished: string;
-            reasonForSelling: string;
-            annualRevenueRange: string;
-            isNegotiable: boolean;
-            businessType?: string;
-            entityType?: string;
-            isPremiumSale?: boolean;
-            companyProfileUrl?: string;
-          }) => {
-            // Normalize status to title case
-            const rawStatus = listing.status || 'Unknown';
-            const normalizedStatus =
-              rawStatus === 'PENDING' ? 'Review' :
-              rawStatus === 'APPROVED' ? 'Approved' :
-              rawStatus === 'SOLD' ? 'Sold' : rawStatus;
-
-            return {
-              id: listing.id,
-              name: listing.businessName || 'Unnamed Listing',
-              category: listing.businessCategoryType || 'Unknown',
-              location: listing.location || 'Unknown',
-              value: `₦${(listing.price || 0).toLocaleString()}`,
-              status: normalizedStatus,
-              views: listing.unlockedByBuyers?.length || 0,
-              inquiries: listing.listOfBuyerRequestingService?.length || 0,
-              image: listing.businessImagesUrls[0] || '/ratel.png',
-              yearEstablished: listing.yearEstablished || 'N/A',
-              reasonForSelling: listing.reasonForSelling || 'Not specified',
-              annualRevenueRange: listing.annualRevenueRange || 'N/A',
-              price: listing.price || 0,
-              isNegotiable: listing.isNegotiable || false,
-              businessType: listing.businessType,
-              entityType: listing.entityType,
-              isPremiumSale: listing.isPremiumSale,
-              companyProfileUrl: listing.companyProfileUrl,
-              businessImagesUrls: listing.businessImagesUrls || [],
-            };
-          });
+          const fetchedListings = response.data.listings.map((listing: any) => ({
+            id: listing.id,
+            name: listing.businessName || 'Unnamed Listing',
+            category: listing.businessCategoryType || 'Unknown',
+            location: listing.location || 'Unknown',
+            value: `₦${(listing.price || 0).toLocaleString()}`,
+            status: listing.status === 'PENDING' ? 'Review' :
+                    listing.status === 'APPROVED' ? 'Approved' :
+                    listing.status === 'SOLD' ? 'Sold' :
+                    listing.status === 'PENDING_DEACTIVATION' ? 'Deactivation Requested' : listing.status,
+            views: listing.unlockedByBuyers?.length || 0,
+            inquiries: listing.listOfBuyerRequestingService?.length || 0,
+            image: listing.businessImagesUrls[0] || '/ratel.png',
+            yearEstablished: listing.yearEstablished || 'N/A',
+            reasonForSelling: listing.reasonForSelling || 'Not specified',
+            annualRevenueRange: listing.annualRevenueRange || 'N/A',
+            price: listing.price || 0,
+            isNegotiable: listing.isNegotiable || false,
+            businessType: listing.businessType,
+            entityType: listing.entityType,
+            isPremiumSale: listing.isPremiumSale,
+            companyProfileUrl: listing.companyProfileUrl,
+            businessImagesUrls: listing.businessImagesUrls || [],
+          }));
           setListings(fetchedListings);
-          console.log('Listings - Listings set:', fetchedListings);
         } else {
-          console.log('Listings - Unexpected API status:', response.status);
           setError('Unexpected response from server.');
           toast.error('Failed to load listings.');
         }
       } catch (err) {
-        console.error('Listings - Fetch Error:', err);
         setError('Failed to load listings. Please try again.');
         toast.error('Failed to load listings.');
-        // Note: The api instance handles 401 redirects via interceptors
       } finally {
         setLoading(false);
-        console.log('Listings fetchListings - Ended');
       }
     };
     fetchListings();
@@ -145,23 +116,68 @@ export default function Listings() {
     router.push(`/dashboard/listings/new?listingId=${listing.id}`);
   };
 
-  const handleDelete = async (listingId: string) => {
+  const handleDeactivationRequest = async (listingId: string) => {
+    if (!deactivationReason) {
+      toast.error('Please select a reason for deactivation.');
+      return;
+    }
+
     try {
       const accessToken = Cookies.get('accessToken');
       if (!accessToken) {
-        console.log('Listings - No access token for delete, redirecting to login');
-        router.push(getLoginRedirectUrl('seller')); // Use centralized login URL
+        router.push(getLoginRedirectUrl('seller'));
         return;
       }
 
-      await api.delete(`/seller/listings/delete/${listingId}`); // Use api instance
-      setListings((prev) => prev.filter((listing) => listing.id !== listingId));
-      setShowDeleteConfirm(false);
-      setSelectedListing(null);
-      toast.success('Listing deleted successfully!');
-    } catch (err) {
-      console.error('Listings - Error deleting listing:', err);
-      toast.error('Failed to delete listing.');
+      const payload = {
+        reasonForDeactivation: deactivationReason,
+        ...(deactivationComment && { additionalComment: deactivationComment }),
+      };
+
+      const response = await api.post(
+        `/seller/listing/${listingId}/request-deactivation`,
+        payload
+      );
+
+      if (response.status === 200) {
+        toast.success(response.data.message || 'Deactivation request submitted successfully!');
+        setShowDeactivationModal(false);
+        setSelectedListing(null);
+        setDeactivationReason('');
+        setDeactivationComment('');
+        // Refetch listings to ensure updated status
+        const sellerData = JSON.parse(Cookies.get('sellerData') || '{}');
+        const updatedResponse = await api.get(`/seller/listings/fetch-all/${sellerData.id}`);
+        setListings(updatedResponse.data.listings.map((listing: any) => ({
+          id: listing.id,
+          name: listing.businessName || 'Unnamed Listing',
+          category: listing.businessCategoryType || 'Unknown',
+          location: listing.location || 'Unknown',
+          value: `₦${(listing.price || 0).toLocaleString()}`,
+          status: listing.status === 'PENDING' ? 'Review' :
+                  listing.status === 'APPROVED' ? 'Approved' :
+                  listing.status === 'SOLD' ? 'Sold' :
+                  listing.status === 'PENDING_DEACTIVATION' ? 'Deactivation Requested' : listing.status,
+          views: listing.unlockedByBuyers?.length || 0,
+          inquiries: listing.listOfBuyerRequestingService?.length || 0,
+          image: listing.businessImagesUrls[0] || '/ratel.png',
+          yearEstablished: listing.yearEstablished || 'N/A',
+          reasonForSelling: listing.reasonForSelling || 'Not specified',
+          annualRevenueRange: listing.annualRevenueRange || 'N/A',
+          price: listing.price || 0,
+          isNegotiable: listing.isNegotiable || false,
+          businessType: listing.businessType,
+          entityType: listing.entityType,
+          isPremiumSale: listing.isPremiumSale,
+          companyProfileUrl: listing.companyProfileUrl,
+          businessImagesUrls: listing.businessImagesUrls || [],
+        })));
+      } else {
+        toast.error('Failed to submit deactivation request.');
+      }
+    } catch (err: any) {
+      console.error('Error requesting deactivation:', err);
+      toast.error(err.response?.data?.message || 'Failed to submit deactivation request.');
     }
   };
 
@@ -252,10 +268,10 @@ export default function Listings() {
                 {listing.status === 'Sold' && (
                   <div className="absolute top-2 left-2">
                     <Image
-                      src="/sold-tag.png" // Adjust path to your PNG
+                      src="/sold copy.png"
                       alt="Sold Tag"
-                      width={60}
-                      height={20}
+                      width={100}
+                      height={40}
                       className="object-contain"
                     />
                   </div>
@@ -279,6 +295,8 @@ export default function Listings() {
                             ? 'bg-yellow-500'
                             : listing.status === 'Sold'
                             ? 'bg-red-500'
+                            : listing.status === 'Deactivation Requested'
+                            ? 'bg-orange-500'
                             : 'bg-gray-500'
                         }`}
                       ></span>
@@ -380,10 +398,10 @@ export default function Listings() {
               </div>
               <div className="flex justify-between space-x-4">
                 <button
-                  onClick={() => setShowDeleteConfirm(true)}
+                  onClick={() => setShowDeactivationModal(true)}
                   className="w-32 border border-[#F26E52] text-[#F26E52] px-6 py-2 rounded-md text-sm flex justify-center"
                 >
-                  Delete
+                  Deactivate
                 </button>
                 <button
                   onClick={() => handleEdit(selectedListing)}
@@ -397,26 +415,61 @@ export default function Listings() {
         </div>
       )}
 
-      {/* Delete Confirmation Overlay */}
-      {showDeleteConfirm && selectedListing && (
+      {/* Deactivation Request Modal */}
+      {showDeactivationModal && selectedListing && (
         <div className="fixed inset-0 bg-gradient-to-br from-gray-800/50 to-gray-900/50 flex justify-center items-center z-50">
-          <div className="bg-white rounded-lg p-6 shadow-lg">
-            <h2 className="text-xl font-bold text-[#011631] mb-4">Delete?</h2>
+          <div className="bg-white rounded-lg p-6 shadow-lg w-full max-w-md">
+            <h2 className="text-xl font-bold text-[#011631] mb-4">Request Listing Deactivation</h2>
             <p className="text-sm text-gray-600 mb-6">
-              Are you sure you want to delete this listing?
+              Please select a reason for deactivating this listing and provide any additional comments if necessary.
             </p>
-            <div className="flex justify-end space-x-4">
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-semibold text-gray-700">Reason for Deactivation</label>
+                <select
+                  value={deactivationReason}
+                  onChange={(e) => setDeactivationReason(e.target.value)}
+                  className="w-full mt-1 p-2 border border-gray-300 rounded-md text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#F26E52]"
+                  aria-label="Reason for deactivation"
+                >
+                  <option value="" disabled>
+                    Select a reason
+                  </option>
+                  {deactivationReasons.map((reason) => (
+                    <option key={reason} value={reason}>
+                      {reason}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-sm font-semibold text-gray-700">Additional Comments (Optional)</label>
+                <textarea
+                  value={deactivationComment}
+                  onChange={(e) => setDeactivationComment(e.target.value)}
+                  placeholder="Provide any additional details..."
+                  className="w-full mt-1 p-2 border border-gray-300 rounded-md text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#F26E52]"
+                  rows={4}
+                  aria-label="Additional comments for deactivation"
+                />
+              </div>
+            </div>
+            <div className="flex justify-center space-x-4 mt-6">
               <button
-                onClick={() => setShowDeleteConfirm(false)}
-                className="text-gray-600 px-4 py-2 rounded-md"
+                onClick={() => {
+                  setShowDeactivationModal(false);
+                  setDeactivationReason('');
+                  setDeactivationComment('');
+                }}
+                className="text-gray-600 px-4 py-2 rounded-md border border-gray-300 hover:bg-gray-100"
               >
                 Cancel
               </button>
               <button
-                onClick={() => handleDelete(selectedListing.id)}
+                onClick={() => handleDeactivationRequest(selectedListing.id)}
                 className="bg-[#F26E52] text-white px-4 py-2 rounded-md"
               >
-                Proceed
+                Submit Request
               </button>
             </div>
           </div>

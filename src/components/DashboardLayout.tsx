@@ -10,7 +10,7 @@ import Cookies from 'js-cookie';
 import Wallet from './Wallet';
 import CreateWalletOverlay from './CreateWalletOverlay';
 import WithdrawFundsOverlay from './WithdrawFundsOverlay';
-import api from '../lib/api';
+import api, { setupTokenRefresh } from '../lib/api';
 import { getLoginRedirectUrl } from '../config/env';
 
 interface UserProfile {
@@ -72,6 +72,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   useEffect(() => {
     logAndPersist('DashboardLayout - Mounting component');
     setIsMounted(true);
+    setupTokenRefresh(); // Start proactive token refresh
   }, [logAndPersist]);
 
   const loadUserData = useCallback(async () => {
@@ -162,6 +163,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const navItems = [
     { name: 'Dashboard', path: '/dashboard', icon: '/dashboard.png' },
     { name: 'Listing', path: '/dashboard/listings', icon: '/listings.png' },
+    { name: 'Offers', path: '/dashboard/offers', icon: '/offers.png' },
+    // { name: 'Notifications', path: '/dashboard/notifications', icon: '/notifications.png' },
     { name: 'Messages', path: '/dashboard/messages', icon: '/message.png' },
     { name: 'Wallet & Transactions', path: '/dashboard/walletTransactions', icon: '/transactions.png' },
     { name: 'Settings', path: '/dashboard/settings', icon: '/settings.png' },

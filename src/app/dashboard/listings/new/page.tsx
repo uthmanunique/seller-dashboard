@@ -8,8 +8,9 @@ import { toast } from 'react-toastify';
 import Cookies from 'js-cookie';
 import api from '@/src/lib/api';
 import { getLoginRedirectUrl } from '@/src/config/env';
-import { AxiosError } from 'axios'; // Import AxiosError
+import { AxiosError } from 'axios';
 
+// Interfaces remain unchanged
 interface SellerData {
   id: string;
   role: string;
@@ -113,7 +114,17 @@ export default function AddListingClient() {
     sellerId: '',
   });
 
+  // New state for role guidance message
+  const [roleGuidance, setRoleGuidance] = useState<string>('');
+
   useEffect(() => {
+    // Set initial guidance message based on default role
+    setRoleGuidance(
+      formData.role === 'Owner'
+        ? 'Please prepare the following documents (optional): Company Profile, CAC Documents, Memorandum & Articles, Share Allotment Form.'
+        : 'Please prepare the following documents (optional): Company Profile, CAC Documents, Memorandum & Articles, Share Allotment Form, Letter of Authorization.'
+    );
+
     const initializeData = async () => {
       setLoading(true);
       console.log('AddListingClient - initializeData: Starting');
@@ -283,6 +294,7 @@ export default function AddListingClient() {
         formDataToSend.append('assetsAndInventory', JSON.stringify(formData.assetsAndInventory));
         formDataToSend.append('debtAndLiabilities', JSON.stringify(formData.debtAndLiabilities));
 
+        // Only append files if they exist
         if (formData.companyProfileUrl instanceof File) {
           formDataToSend.append('companyProfileUrl', formData.companyProfileUrl);
         }
@@ -343,19 +355,21 @@ export default function AddListingClient() {
       formData.preferredBuyerType,
       formData.listingType,
     ];
-    if (!isEditMode) {
-      if (formData.companyProfileUrl) requiredFields.push(formData.companyProfileUrl as string);
-      if (formData.cacDocuments) requiredFields.push(formData.cacDocuments as string);
-      if (formData.memorandum) requiredFields.push(formData.memorandum as string);
-      if (formData.shareAllotment) requiredFields.push(formData.shareAllotment as string);
-      if (formData.role === 'Broker' && formData.letterOfAuthorization) requiredFields.push(formData.letterOfAuthorization as string);
-    }
+    // Removed document fields from required checks
     return requiredFields.every((field) => field !== '' && field !== null);
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
+    // Update role guidance message when role changes
+    if (name === 'role') {
+      setRoleGuidance(
+        value === 'Owner'
+          ? 'Please prepare the following documents (optional): Company Profile, CAC Documents, Memorandum & Articles, Share Allotment Form.'
+          : 'Please prepare the following documents (optional): Company Profile, CAC Documents, Memorandum & Articles, Share Allotment Form, Letter of Authorization.'
+      );
+    }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, field: keyof FormData) => {
@@ -389,11 +403,19 @@ export default function AddListingClient() {
     if (typeof file === 'string') return file;
     const extension = file.name.split('.').pop()?.toLowerCase();
     switch (extension) {
-      case 'pdf': return '/pdf.png';
-      case 'jpg': case 'jpeg': case 'png': return '/document.png';
-      case 'xlsx': return '/xlsx.png';
-      case 'docx': case 'doc': return '/docx.png';
-      default: return '/document.png';
+      case 'pdf':
+        return '/pdf.png';
+      case 'jpg':
+      case 'jpeg':
+      case 'png':
+        return '/image.png';
+      case 'xlsx':
+        return '/xlsx.png';
+      case 'doc':
+      case 'docx':
+        return '/docx.png';
+      default:
+        return '/document.png';
     }
   };
 
@@ -489,6 +511,9 @@ export default function AddListingClient() {
                     <span className="text-xs text-black">Broker</span>
                   </label>
                 </div>
+                {roleGuidance && (
+                  <p className="text-xs text-gray-600 mt-2">{roleGuidance}</p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-semibold text-gray-700">Entity Type <span className="text-red-600">*</span></label>
@@ -627,7 +652,7 @@ export default function AddListingClient() {
                     <input
                       type="file"
                       multiple
-                      accept=".jpg,.png,.pdf,.xlsx,.docx"
+                      accept=".jpg,.png,.jpeg,.pdf,.doc,.docx,.xlsx"
                       onChange={(e) => handleFileChange(e, 'images')}
                       className="hidden"
                       id="business-images"
@@ -649,7 +674,7 @@ export default function AddListingClient() {
                     )}
                   </div>
                   <div className="flex justify-between text-xs text-gray-600 mt-2">
-                    <p>Supported formats: jpg, png, pdf, xlsx, docx</p>
+                    <p>Supported formats: jpg, png, jpeg, pdf, doc, docx, xlsx</p>
                     <p>Maximum: 2MB</p>
                   </div>
                 </div>
@@ -872,13 +897,11 @@ export default function AddListingClient() {
                   </div>
                   {formData.role === 'Broker' && (
                     <div>
-                      <label className="block text-sm font-semibold text-gray-700">
-                        Letter of Authorization <span className="text-red-600">*</span>
-                      </label>
+                      <label className="block text-sm font-semibold text-gray-700">Letter of Authorization</label>
                       <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 flex flex-col items-center justify-center mt-2">
                         <input
                           type="file"
-                          accept=".png,.jpg,.jpeg,.docs,.docx"
+                          accept=".jpg,.png,.jpeg,.pdf,.doc,.docx,.xlsx"
                           onChange={(e) => handleFileChange(e, 'letterOfAuthorization')}
                           className="hidden"
                           id="letter-of-authorization"
@@ -904,14 +927,18 @@ export default function AddListingClient() {
                           </p>
                         )}
                       </div>
+                      <div className="flex justify-between text-xs text-gray-600 mt-2">
+                        <p>Supported formats: jpg, png, jpeg, pdf, doc, docx, xlsx</p>
+                        <p>Maximum: 2MB</p>
+                      </div>
                     </div>
                   )}
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700">Company Profile <span className="text-red-600">*</span></label>
+                    <label className="block text-sm font-semibold text-gray-700">Company Profile</label>
                     <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 flex flex-col items-center justify-center mt-2">
                       <input
                         type="file"
-                        accept=".png,.jpg,.jpeg,.docs,.docx"
+                        accept=".jpg,.png,.jpeg,.pdf,.doc,.docx,.xlsx"
                         onChange={(e) => handleFileChange(e, 'companyProfileUrl')}
                         className="hidden"
                         id="company-profile"
@@ -935,13 +962,17 @@ export default function AddListingClient() {
                         </p>
                       )}
                     </div>
+                    <div className="flex justify-between text-xs text-gray-600 mt-2">
+                      <p>Supported formats: jpg, png, jpeg, pdf, doc, docx, xlsx</p>
+                      <p>Maximum: 2MB</p>
+                    </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700">Upload CAC Documents <span className="text-red-600">*</span></label>
+                    <label className="block text-sm font-semibold text-gray-700">Upload CAC Documents</label>
                     <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 flex flex-col items-center justify-center mt-2">
                       <input
                         type="file"
-                        accept=".png,.jpg,.jpeg,.docs,.docx"
+                        accept=".jpg,.png,.jpeg,.pdf,.doc,.docx,.xlsx"
                         onChange={(e) => handleFileChange(e, 'cacDocuments')}
                         className="hidden"
                         id="cac-documents"
@@ -965,13 +996,17 @@ export default function AddListingClient() {
                         </p>
                       )}
                     </div>
+                    <div className="flex justify-between text-xs text-gray-600 mt-2">
+                      <p>Supported formats: jpg, png, jpeg, pdf, doc, docx, xlsx</p>
+                      <p>Maximum: 2MB</p>
+                    </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700">Upload Memorandum & Articles of Information <span className="text-red-600">*</span></label>
+                    <label className="block text-sm font-semibold text-gray-700">Upload Memorandum & Articles of Information</label>
                     <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 flex flex-col items-center justify-center mt-2">
                       <input
                         type="file"
-                        accept=".png,.jpg,.jpeg,.docs,.docx"
+                        accept=".jpg,.png,.jpeg,.pdf,.doc,.docx,.xlsx"
                         onChange={(e) => handleFileChange(e, 'memorandum')}
                         className="hidden"
                         id="memorandum"
@@ -995,13 +1030,17 @@ export default function AddListingClient() {
                         </p>
                       )}
                     </div>
+                    <div className="flex justify-between text-xs text-gray-600 mt-2">
+                      <p>Supported formats: jpg, png, jpeg, pdf, doc, docx, xlsx</p>
+                      <p>Maximum: 2MB</p>
+                    </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700">Upload Share Allotment Form <span className="text-red-600">*</span></label>
+                    <label className="block text-sm font-semibold text-gray-700">Upload Share Allotment Form</label>
                     <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 flex flex-col items-center justify-center mt-2">
                       <input
                         type="file"
-                        accept=".png,.jpg,.jpeg,.docs,.docx"
+                        accept=".jpg,.png,.jpeg,.pdf,.doc,.docx,.xlsx"
                         onChange={(e) => handleFileChange(e, 'shareAllotment')}
                         className="hidden"
                         id="share-allotment"
@@ -1024,6 +1063,10 @@ export default function AddListingClient() {
                           {formData.shareAllotment instanceof File ? formData.shareAllotment.name : formData.shareAllotment}
                         </p>
                       )}
+                    </div>
+                    <div className="flex justify-between text-xs text-gray-600 mt-2">
+                      <p>Supported formats: jpg, png, jpeg, pdf, doc, docx, xlsx</p>
+                      <p>Maximum: 2MB</p>
                     </div>
                   </div>
                 </>
