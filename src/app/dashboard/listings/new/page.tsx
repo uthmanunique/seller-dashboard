@@ -1,3 +1,4 @@
+//src/app/dashboard/listings/new/page.tsx
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -220,7 +221,7 @@ export default function AddListingClient() {
     };
 
     initializeData();
-  }, [listingId, router]);
+  }, [listingId, router, formData.role]);
 
   const handleSubmit = async () => {
     if (!isFormComplete()) {

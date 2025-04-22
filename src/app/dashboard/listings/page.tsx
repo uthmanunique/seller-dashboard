@@ -11,24 +11,28 @@ import { getLoginRedirectUrl } from '../../../config/env';
 
 interface Listing {
   id: string;
+  businessName?: string; // Added
+  businessCategoryType?: string; // Added
+  location?: string;
+  price?: number;
+  status: string;
+  unlockedByBuyers?: string[]; // Added
+  listOfBuyerRequestingService?: string[]; // Added
+  businessImagesUrls: string[];
   name: string;
   category: string;
-  location: string;
   value: string;
-  status: string;
   views: number;
   inquiries: number;
   image: string;
   yearEstablished: string;
   reasonForSelling: string;
   annualRevenueRange: string;
-  price: number;
   isNegotiable: boolean;
   businessType?: string;
   entityType?: string;
   isPremiumSale?: boolean;
   companyProfileUrl?: string;
-  businessImagesUrls: string[];
 }
 
 export default function Listings() {
@@ -67,7 +71,7 @@ export default function Listings() {
         const sellerData = JSON.parse(sellerDataString);
         const response = await api.get(`/seller/listings/fetch-all/${sellerData.id}`);
         if (response.status === 200) {
-          const fetchedListings = response.data.listings.map((listing: any) => ({
+          const fetchedListings = response.data.listings.map((listing: Listing) => ({
             id: listing.id,
             name: listing.businessName || 'Unnamed Listing',
             category: listing.businessCategoryType || 'Unknown',
@@ -90,13 +94,17 @@ export default function Listings() {
             isPremiumSale: listing.isPremiumSale,
             companyProfileUrl: listing.companyProfileUrl,
             businessImagesUrls: listing.businessImagesUrls || [],
+            businessName: listing.businessName,
+            businessCategoryType: listing.businessCategoryType,
+            unlockedByBuyers: listing.unlockedByBuyers,
+            listOfBuyerRequestingService: listing.listOfBuyerRequestingService,
           }));
           setListings(fetchedListings);
         } else {
           setError('Unexpected response from server.');
           toast.error('Failed to load listings.');
         }
-      } catch (err) {
+      } catch {
         setError('Failed to load listings. Please try again.');
         toast.error('Failed to load listings.');
       } finally {
@@ -145,10 +153,9 @@ export default function Listings() {
         setSelectedListing(null);
         setDeactivationReason('');
         setDeactivationComment('');
-        // Refetch listings to ensure updated status
         const sellerData = JSON.parse(Cookies.get('sellerData') || '{}');
         const updatedResponse = await api.get(`/seller/listings/fetch-all/${sellerData.id}`);
-        setListings(updatedResponse.data.listings.map((listing: any) => ({
+        setListings(updatedResponse.data.listings.map((listing: Listing) => ({
           id: listing.id,
           name: listing.businessName || 'Unnamed Listing',
           category: listing.businessCategoryType || 'Unknown',
@@ -171,13 +178,17 @@ export default function Listings() {
           isPremiumSale: listing.isPremiumSale,
           companyProfileUrl: listing.companyProfileUrl,
           businessImagesUrls: listing.businessImagesUrls || [],
+          businessName: listing.businessName,
+          businessCategoryType: listing.businessCategoryType,
+          unlockedByBuyers: listing.unlockedByBuyers,
+          listOfBuyerRequestingService: listing.listOfBuyerRequestingService,
         })));
       } else {
         toast.error('Failed to submit deactivation request.');
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error requesting deactivation:', err);
-      toast.error(err.response?.data?.message || 'Failed to submit deactivation request.');
+      toast.error('Failed to submit deactivation request.');
     }
   };
 
@@ -205,7 +216,6 @@ export default function Listings() {
 
   return (
     <div className="p-4 relative">
-      {/* Header Section */}
       <div className="flex justify-between items-center mb-6">
         <div>
           <h2 className="text-xl font-bold text-[#011631]">Manage Your Listings</h2>
@@ -221,7 +231,6 @@ export default function Listings() {
         </Link>
       </div>
 
-      {/* Tabs */}
       <div className="flex space-x-4 border-b border-gray-200 mb-4">
         {tabs.map((tab) => (
           <button
@@ -238,7 +247,6 @@ export default function Listings() {
         ))}
       </div>
 
-      {/* Listings Content */}
       {filteredListings.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-[calc(100vh-200px)]">
           <Image src="/no-listings.png" alt="No Listings" width={100} height={100} className="mb-6" />
@@ -322,7 +330,6 @@ export default function Listings() {
         </>
       )}
 
-      {/* Listing Overlay */}
       {selectedListing && (
         <div className="fixed inset-0 bg-gradient-to-br from-gray-800/50 to-gray-900/50 flex justify-end items-center z-50">
           <div className="bg-white w-full max-w-sm h-full p-4 shadow-lg transform transition-transform duration-300 ease-in-out overflow-y-auto">
@@ -363,7 +370,7 @@ export default function Listings() {
                 </div>
                 <div>
                   <p className="text-sm font-semibold text-gray-700">Price</p>
-                  <p className="text-gray-600">₦{selectedListing.price.toLocaleString()}</p>
+                  <p className="text-gray-600">₦{selectedListing.price?.toLocaleString()}</p>
                 </div>
                 <div>
                   <p className="text-sm font-semibold text-gray-700">Negotiation</p>
@@ -415,7 +422,6 @@ export default function Listings() {
         </div>
       )}
 
-      {/* Deactivation Request Modal */}
       {showDeactivationModal && selectedListing && (
         <div className="fixed inset-0 bg-gradient-to-br from-gray-800/50 to-gray-900/50 flex justify-center items-center z-50">
           <div className="bg-white rounded-lg p-6 shadow-lg w-full max-w-md">
