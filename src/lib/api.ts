@@ -1,25 +1,19 @@
-import axios, { AxiosResponse, AxiosRequestConfig } from 'axios';
+// src/lib/api.ts
+import axios, { AxiosResponse } from 'axios';
 import Cookies from 'js-cookie';
 import { config, getLoginRedirectUrl } from '../config/env';
 
-interface CustomAxiosRequestConfig extends AxiosRequestConfig {
-  _retry?: boolean;
-}
-
+// Create axios instance
 const api = axios.create({
   baseURL: config.API_BASE_URL(),
   headers: { 'Content-Type': 'application/json' },
 });
 
-interface QueueItem {
-  resolve: (value: string | null) => void;
-  reject: (reason: unknown) => void;
-}
-
+// Manage concurrent 401 handling
 let isHandling401 = false;
-let failedQueue: QueueItem[] = [];
+let failedQueue: Array<{ resolve: (value: any) => void; reject: (reason: any) => void }> = [];
 
-const processQueue = (error: unknown, token: string | null = null) => {
+const processQueue = (error: any, token: string | null = null) => {
   failedQueue.forEach(({ resolve, reject }) => {
     if (error) {
       reject(error);
@@ -30,6 +24,7 @@ const processQueue = (error: unknown, token: string | null = null) => {
   failedQueue = [];
 };
 
+// Attach access token to every request
 api.interceptors.request.use((config) => {
   const accessToken = Cookies.get('accessToken');
   if (accessToken) {
@@ -40,39 +35,34 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// Handle all responses and errors
 api.interceptors.response.use(
   (response) => {
+    // Update tokens from headers for successful responses
     updateTokensFromHeaders(response);
     return response;
   },
-  async (error: unknown) => {
-    // Type narrowing for Axios error
-    const axiosError = error as { response?: AxiosResponse; config?: CustomAxiosRequestConfig; message?: string };
-    const originalRequest = axiosError.config;
-
-    if (axiosError.response) {
-      updateTokensFromHeaders(axiosError.response);
+  async (error) => {
+    const originalRequest = error.config;
+    // Update tokens from headers for error responses
+    if (error.response) {
+      updateTokensFromHeaders(error.response);
     } else {
-      console.error(`No response object for error: ${axiosError.message || 'Unknown error'}`);
+      console.error(`No response object for error: ${error.message}`);
+      //clear cookies and redirect to login if there is no response object
+      clearCookiesAndRedirect();
     }
 
-    if (
-      axiosError.response?.status === 401 &&
-      originalRequest &&
-      !originalRequest._retry
-    ) {
+    if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
 
       if (isHandling401) {
+        // Queue the request
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject });
         })
           .then((token) => {
-            if (originalRequest.headers) {
-              originalRequest.headers['Authorization'] = `Bearer ${token}`;
-            } else {
-              originalRequest.headers = { Authorization: `Bearer ${token}` };
-            }
+            originalRequest.headers['Authorization'] = `Bearer ${token}`;
             return api(originalRequest);
           })
           .catch((err) => Promise.reject(err));
@@ -81,40 +71,38 @@ api.interceptors.response.use(
       isHandling401 = true;
 
       const accessToken = Cookies.get('accessToken');
-      const refreshToken = Cookies.get('refreshToken');
 
-      if (!accessToken || !refreshToken) {
-        console.warn(`401: Missing tokens, redirecting to login. URL: ${originalRequest.url || 'unknown'}`);
+      if (!accessToken) {
+        console.warn(`401: Missing access token, redirecting to login. URL: ${originalRequest.url}`);
         isHandling401 = false;
         clearCookiesAndRedirect();
-        return Promise.reject(axiosError);
+        return Promise.reject(error);
       }
 
+      // Check if new tokens were updated from headers
       const newAccessToken = Cookies.get('accessToken');
       if (newAccessToken && newAccessToken !== accessToken) {
-        console.log(`401: New access token found, retrying request: ${originalRequest.url || 'unknown'}`);
-        if (originalRequest.headers) {
-          originalRequest.headers['Authorization'] = `Bearer ${newAccessToken}`;
-        } else {
-          originalRequest.headers = { Authorization: `Bearer ${newAccessToken}` };
-        }
+        console.log(`401: New access token found, retrying request: ${originalRequest.url}`);
+        originalRequest.headers['Authorization'] = `Bearer ${newAccessToken}`;
         processQueue(null, newAccessToken);
         isHandling401 = false;
         return api(originalRequest);
       }
 
-      console.warn(`401: No new tokens in response, redirecting to login. URL: ${originalRequest.url || 'unknown'}`);
+      // No new tokens, redirect to login
+      console.warn(`401: No new tokens in response, redirecting to login. URL: ${originalRequest.url}`);
       isHandling401 = false;
-      processQueue(axiosError);
+      processQueue(error);
       clearCookiesAndRedirect();
-      return Promise.reject(axiosError);
+      return Promise.reject(error);
     }
 
-    console.error(`API error: ${axiosError.response?.status || 'No status'} - ${axiosError.message || 'Unknown error'}`);
-    return Promise.reject(axiosError);
+    console.error(`API error: ${error.response?.status || 'No status'} - ${error.message}`);
+    return Promise.reject(error);
   }
 );
 
+// Helper to update tokens from response headers
 const updateTokensFromHeaders = (response: AxiosResponse) => {
   const newAccessToken = response.headers['x-access-token'];
   const newRefreshToken = response.headers['x-refresh-token'];
@@ -124,20 +112,19 @@ const updateTokensFromHeaders = (response: AxiosResponse) => {
 
   if (newAccessToken) {
     Cookies.set('accessToken', newAccessToken, {
-      expires: 15 / (24 * 60),
+      expires: 1 / 24, // 1 hour
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
     });
     console.log(`Updated accessToken for: ${response.config?.url || 'unknown'}`);
-  }
-
-  if (newRefreshToken) {
-    Cookies.set('refreshToken', newRefreshToken, {
-      expires: 1,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-    });
-    console.log(`Updated refreshToken for: ${response.config?.url || 'unknown'}`);
+    if (newRefreshToken){
+      Cookies.set('refreshToken', newRefreshToken, {
+        expires: 1, // 1 day
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+      });
+      console.log(`Updated refreshToken for: ${response.config?.url || 'unknown'}`);
+    }
   }
 
   if (!newAccessToken && !newRefreshToken) {
@@ -145,6 +132,7 @@ const updateTokensFromHeaders = (response: AxiosResponse) => {
   }
 };
 
+// Helper to clear cookies and redirect
 const clearCookiesAndRedirect = () => {
   console.log('Clearing cookies and redirecting to login');
   Cookies.remove('accessToken');
@@ -153,8 +141,9 @@ const clearCookiesAndRedirect = () => {
   window.location.href = getLoginRedirectUrl('seller');
 };
 
+// Proactive token refresh
 export const setupTokenRefresh = () => {
-  const refreshInterval = 10 * 60 * 1000;
+  const refreshInterval = 45 * 60 * 1000; // Every 45 minutes
   setInterval(async () => {
     const accessToken = Cookies.get('accessToken');
     const refreshToken = Cookies.get('refreshToken');
@@ -171,8 +160,11 @@ export const setupTokenRefresh = () => {
           },
         });
         console.log('Proactive refresh successful');
-      } catch (err: unknown) {
-        console.error(`Proactive refresh failed: ${err}`);
+      } catch (err: any) {
+        console.error(`Proactive refresh failed: ${err.message}`, {
+          status: err.response?.status,
+          url: err.config?.url,
+        });
       }
     } else {
       console.warn('Proactive refresh skipped: Missing tokens or seller data');
