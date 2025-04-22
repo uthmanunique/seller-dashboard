@@ -1,4 +1,4 @@
-// src/components/DashboardLayout.tsx
+//src/components/DashboardLayout.tsx
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
@@ -60,41 +60,43 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const pathname = usePathname();
   const loginUrl = getLoginRedirectUrl('seller');
 
-  const logAndPersist = useCallback((message: string) => {
-    console.log(message);
-    if (typeof window !== 'undefined') {
-      const logs = JSON.parse(localStorage.getItem('dashboardDebugLogs') || '[]');
-      logs.push(`${new Date().toISOString()} - ${message}`);
-      localStorage.setItem('dashboardDebugLogs', JSON.stringify(logs.slice(-50)));
-    }
-  }, []);
-
   useEffect(() => {
-    logAndPersist('DashboardLayout - Mounting component');
+    console.log('DashboardLayout - Mounting component');
     setIsMounted(true);
     setupTokenRefresh(); // Start proactive token refresh
-  }, [logAndPersist]);
+  }, []);
 
   const loadUserData = useCallback(async () => {
     if (!isMounted) {
-      logAndPersist('DashboardLayout - Not mounted yet, skipping loadUserData');
+      console.log('DashboardLayout - Not mounted yet, skipping loadUserData');
       return;
     }
+
     setIsLoading(true);
-    logAndPersist('DashboardLayout loadUserData - Starting');
+    console.log('DashboardLayout loadUserData - Starting');
+
+    // Check if we're on the login page to avoid redirect loops
+    if (pathname === '/login' || pathname.includes('auth')) {
+      console.log('DashboardLayout - On login page, skipping token check');
+      setIsLoading(false);
+      return;
+    }
+
     const accessToken = Cookies.get('accessToken');
     const sellerDataString = Cookies.get('sellerData');
-    logAndPersist(`DashboardLayout - accessToken: ${accessToken ? 'present' : 'missing'}`);
-    logAndPersist(`DashboardLayout - sellerData: ${sellerDataString || 'missing'}`);
+    console.log(`DashboardLayout - accessToken: ${accessToken ? 'present' : 'missing'}`);
+    console.log(`DashboardLayout - sellerData: ${sellerDataString ? 'present' : 'missing'}`);
+
     if (!accessToken || !sellerDataString) {
-      logAndPersist('DashboardLayout - Missing required data, redirecting immediately');
+      console.log('DashboardLayout - Missing required data, redirecting to login');
       router.replace(loginUrl);
       setIsLoading(false);
       return;
     }
+
     try {
       const sellerData: SellerData = JSON.parse(sellerDataString);
-      logAndPersist(`DashboardLayout - Parsed Seller Data: ${JSON.stringify(sellerData)}`);
+      console.log(`DashboardLayout - Parsed Seller Data: ${JSON.stringify(sellerData)}`);
       const fullName = `${sellerData.firstName || ''} ${sellerData.lastName || ''}`.trim() || sellerData.email || 'User';
       setUserProfile({
         name: fullName,
@@ -106,26 +108,28 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       const walletResponse = await api.get(
         `/wallets/fetch-info?userType=SELLER&userId=${sellerData.id}`
       );
-      logAndPersist(`DashboardLayout - Wallet API Response: ${JSON.stringify(walletResponse.data)}`);
+      console.log(`DashboardLayout - Wallet API Response: ${JSON.stringify(walletResponse.data)}`);
       setWalletBalance(walletResponse.data.wallet.balance || 0);
 
       const notificationsResponse = await api.get(`/notifications/all/${sellerData.id}`);
-      logAndPersist(`DashboardLayout - Notifications API Response: ${JSON.stringify(notificationsResponse.data)}`);
+      console.log(`DashboardLayout - Notifications API Response: ${JSON.stringify(notificationsResponse.data)}`);
       const fetchedNotifications = notificationsResponse.data.notifications || [];
       setNotifications(fetchedNotifications);
       setUnreadNotifications(fetchedNotifications.length);
     } catch (error) {
-      logAndPersist(`DashboardLayout - Error fetching data: ${error}`);
+      console.error(`DashboardLayout - Error fetching data: ${error}`);
       setUserProfile({ name: 'User', role: 'SELLER', profilePicture: '/profile.png' });
       setIsWalletActivated(false);
       setWalletBalance(0);
       setUnreadNotifications(0);
       setNotifications([]);
+      // Optionally redirect to login on critical errors
+      router.replace(loginUrl);
     } finally {
       setIsLoading(false);
-      logAndPersist('DashboardLayout loadUserData - Ended');
+      console.log('DashboardLayout loadUserData - Ended');
     }
-  }, [isMounted, router, loginUrl, logAndPersist]);
+  }, [isMounted, router, pathname, loginUrl]);
 
   useEffect(() => {
     if (!isMounted) return;
@@ -139,13 +143,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }, [pathname, isWalletActivated]);
 
   const handleLogout = useCallback(() => {
-    logAndPersist('DashboardLayout - Logging out');
+    console.log('DashboardLayout - Logging out');
     Cookies.remove('accessToken', { path: '/' });
     Cookies.remove('refreshToken', { path: '/' });
     Cookies.remove('sellerData', { path: '/' });
     Cookies.remove('role', { path: '/' });
     router.replace(loginUrl);
-  }, [router, loginUrl, logAndPersist]);
+  }, [router, loginUrl]);
 
   const toggleTheme = () => setIsDarkMode(!isDarkMode);
   const handleOpenWalletOverlay = () => setIsWalletOverlayOpen(true);
@@ -164,7 +168,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     { name: 'Dashboard', path: '/dashboard', icon: '/dashboard.png' },
     { name: 'Listing', path: '/dashboard/listings', icon: '/listings.png' },
     { name: 'Offers', path: '/dashboard/offers', icon: '/offers.png' },
-    // { name: 'Notifications', path: '/dashboard/notifications', icon: '/notifications.png' },
     { name: 'Messages', path: '/dashboard/messages', icon: '/message.png' },
     { name: 'Wallet & Transactions', path: '/dashboard/walletTransactions', icon: '/transactions.png' },
     { name: 'Settings', path: '/dashboard/settings', icon: '/settings.png' },
@@ -191,7 +194,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   ) : null;
 
   if (isLoading || !isMounted) {
-    logAndPersist('DashboardLayout - Rendering loading state');
+    console.log('DashboardLayout - Rendering loading state');
     return (
       <div className="flex justify-center items-center h-screen">
         <Image src="/loader.gif" alt="Loading" width={32} height={32} className="animate-spin" />
@@ -199,7 +202,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     );
   }
 
-  logAndPersist(`DashboardLayout - Rendering main layout, userProfile: ${JSON.stringify(userProfile)}`);
+  console.log(`DashboardLayout - Rendering main layout, userProfile: ${JSON.stringify(userProfile)}`);
 
   return (
     <div className="flex flex-col min-h-screen">

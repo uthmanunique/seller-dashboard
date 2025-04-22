@@ -1,8 +1,8 @@
 // Centralized URLs
 // export const config = {
 //   API_BASE_URL: 'https://api-rebrivo.onrender.com/v1/api',
-//   MAIN_WEBSITE_BASE_URL: 'http://localhost:3000',
-//   DASHBOARD_BASE_URL: 'https://rebrivo-seller.vercel.app',
+//   MAIN_WEBSITE_BASE_URL: 'https://rebrivo-website.netlify.app',
+//   DASHBOARD_BASE_URL: 'https://rebrivo-seller-dashboard.netlify.app',
 // };
 
 // export const getLoginRedirectUrl = (role: string = 'seller') => {
