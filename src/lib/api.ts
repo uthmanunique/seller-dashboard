@@ -1,7 +1,23 @@
+
 // src/lib/api.ts
-import axios, { AxiosResponse } from 'axios';
+import axios, {
+  AxiosError,
+  AxiosResponse,
+  AxiosRequestConfig,
+  InternalAxiosRequestConfig,
+} from 'axios';
 import Cookies from 'js-cookie';
 import { config, getLoginRedirectUrl } from '../config/env';
+
+// Define a custom interface for Axios request config with _retry
+interface CustomAxiosRequestConfig extends InternalAxiosRequestConfig {
+  _retry?: boolean;
+}
+
+interface FailedQueueItem {
+  resolve: (value: string | null) => void;
+  reject: (reason: AxiosError) => void;
+}
 
 // Create axios instance
 const api = axios.create({
@@ -11,9 +27,9 @@ const api = axios.create({
 
 // Manage concurrent 401 handling
 let isHandling401 = false;
-let failedQueue: Array<{ resolve: (value: any) => void; reject: (reason: any) => void }> = [];
+let failedQueue: FailedQueueItem[] = [];
 
-const processQueue = (error: any, token: string | null = null) => {
+const processQueue = (error: AxiosError | null, token: string | null = null) => {
   failedQueue.forEach(({ resolve, reject }) => {
     if (error) {
       reject(error);
@@ -25,7 +41,7 @@ const processQueue = (error: any, token: string | null = null) => {
 };
 
 // Attach access token to every request
-api.interceptors.request.use((config) => {
+api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   const accessToken = Cookies.get('accessToken');
   if (accessToken) {
     config.headers['Authorization'] = `Bearer ${accessToken}`;
@@ -42,28 +58,36 @@ api.interceptors.response.use(
     updateTokensFromHeaders(response);
     return response;
   },
-  async (error) => {
-    const originalRequest = error.config;
+  async (error: unknown) => {
+    const axiosError = error as AxiosError;
+    const originalRequest = axiosError.config as CustomAxiosRequestConfig | undefined;
+
     // Update tokens from headers for error responses
-    if (error.response) {
-      updateTokensFromHeaders(error.response);
+    if (axiosError.response) {
+      updateTokensFromHeaders(axiosError.response);
     } else {
-      console.error(`No response object for error: ${error.message}`);
-      //clear cookies and redirect to login if there is no response object
+      console.error(`No response object for error: ${axiosError.message}`);
+      // clear cookies and redirect to login if there is no response object
       clearCookiesAndRedirect();
     }
 
-    if (error.response?.status === 401 && !originalRequest._retry) {
-      originalRequest._retry = true;
+    if (axiosError.response?.status === 401 && !originalRequest?._retry) {
+      if (originalRequest) {
+        originalRequest._retry = true;
+      }
 
       if (isHandling401) {
         // Queue the request
-        return new Promise((resolve, reject) => {
+        return new Promise<string | null>((resolve, reject) => {
           failedQueue.push({ resolve, reject });
         })
           .then((token) => {
-            originalRequest.headers['Authorization'] = `Bearer ${token}`;
-            return api(originalRequest);
+            if (originalRequest) {
+              originalRequest.headers['Authorization'] = `Bearer ${token}`;
+              return api(originalRequest as AxiosRequestConfig); // Type assertion here
+            } else {
+              return Promise.reject("Original request is undefined");
+            }
           })
           .catch((err) => Promise.reject(err));
       }
@@ -73,39 +97,48 @@ api.interceptors.response.use(
       const accessToken = Cookies.get('accessToken');
 
       if (!accessToken) {
-        console.warn(`401: Missing access token, redirecting to login. URL: ${originalRequest.url}`);
+        console.warn(
+          `401: Missing access token, redirecting to login. URL: ${originalRequest?.url}`
+        );
         isHandling401 = false;
         clearCookiesAndRedirect();
-        return Promise.reject(error);
+        return Promise.reject(axiosError);
       }
 
       // Check if new tokens were updated from headers
       const newAccessToken = Cookies.get('accessToken');
       if (newAccessToken && newAccessToken !== accessToken) {
-        console.log(`401: New access token found, retrying request: ${originalRequest.url}`);
-        originalRequest.headers['Authorization'] = `Bearer ${newAccessToken}`;
-        processQueue(null, newAccessToken);
-        isHandling401 = false;
-        return api(originalRequest);
+        console.log(`401: New access token found, retrying request: ${originalRequest?.url}`);
+        if (originalRequest) {
+            originalRequest.headers['Authorization'] = `Bearer ${newAccessToken}`;
+            
+            processQueue(null, newAccessToken);
+            isHandling401 = false;
+            return api(originalRequest as AxiosRequestConfig); // Type assertion here
+        } else {
+            return Promise.reject("Original request is undefined");
+        }
       }
 
       // No new tokens, redirect to login
-      console.warn(`401: No new tokens in response, redirecting to login. URL: ${originalRequest.url}`);
+      console.warn(
+        `401: No new tokens in response, redirecting to login. URL: ${originalRequest?.url}`
+      );
       isHandling401 = false;
-      processQueue(error);
+      processQueue(axiosError);
       clearCookiesAndRedirect();
-      return Promise.reject(error);
+      return Promise.reject(axiosError);
     }
 
-    console.error(`API error: ${error.response?.status || 'No status'} - ${error.message}`);
-    return Promise.reject(error);
+    console.error(`API error: ${axiosError.response?.status || 'No status'} - ${axiosError.message}`);
+    return Promise.reject(axiosError);
   }
 );
 
 // Helper to update tokens from response headers
 const updateTokensFromHeaders = (response: AxiosResponse) => {
-  const newAccessToken = response.headers['x-access-token'];
-  const newRefreshToken = response.headers['x-refresh-token'];
+  const newAccessToken = response.headers['x-access-token'] as string | undefined;
+  const newRefreshToken = response.headers['x-refresh-token'] as string | undefined;
 
   console.log(`Checking headers for: ${response.config?.url || 'unknown'}`);
   console.log(`Headers - x-access-token: ${!!newAccessToken}, x-refresh-token: ${!!newRefreshToken}`);
@@ -117,7 +150,7 @@ const updateTokensFromHeaders = (response: AxiosResponse) => {
       sameSite: 'strict',
     });
     console.log(`Updated accessToken for: ${response.config?.url || 'unknown'}`);
-    if (newRefreshToken){
+    if (newRefreshToken) {
       Cookies.set('refreshToken', newRefreshToken, {
         expires: 1, // 1 day
         secure: process.env.NODE_ENV === 'production',
@@ -160,10 +193,11 @@ export const setupTokenRefresh = () => {
           },
         });
         console.log('Proactive refresh successful');
-      } catch (err: any) {
-        console.error(`Proactive refresh failed: ${err.message}`, {
-          status: err.response?.status,
-          url: err.config?.url,
+      } catch (err: unknown) {
+        const axiosError = err as AxiosError;
+        console.error(`Proactive refresh failed: ${axiosError.message}`, {
+          status: axiosError.response?.status,
+          url: axiosError.config?.url,
         });
       }
     } else {
