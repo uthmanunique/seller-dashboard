@@ -1,4 +1,3 @@
-// src/lib/api.ts - Updated version
 import axios, {
   AxiosError,
   AxiosResponse,
@@ -90,7 +89,7 @@ api.interceptors.response.use(
               originalRequest.headers['Authorization'] = `Bearer ${token}`;
               return api(originalRequest as AxiosRequestConfig);
             } else {
-              return Promise.reject("Original request or token is undefined");
+              return Promise.reject('Original request or token is undefined');
             }
           })
           .catch((err) => Promise.reject(err));
@@ -101,23 +100,21 @@ api.interceptors.response.use(
       // Try to get a new token using refreshToken, if available
       const refreshToken = Cookies.get('refreshToken');
       const sellerDataStr = Cookies.get('sellerData');
-      
+
       if (!refreshToken || !sellerDataStr) {
         console.warn('401: Missing refresh token or seller data, redirecting to login');
         isHandling401 = false;
         clearCookiesAndRedirect();
-        return Promise.reject(axiosError);
       }
-      
+
       try {
         // Try to refresh the token
-        const sellerData = JSON.parse(sellerDataStr);
         const response = await axios.post(
           `${config.API_BASE_URL()}/auth/refresh-token`,
           { refreshToken },
           { headers: { 'Content-Type': 'application/json' } }
         );
-        
+
         if (response.status === 200 && response.data.accessToken) {
           const newToken = response.data.accessToken;
           // Store the new token
@@ -126,7 +123,7 @@ api.interceptors.response.use(
             secure: true,
             sameSite: 'lax',
           });
-          
+
           if (response.data.refreshToken) {
             Cookies.set('refreshToken', response.data.refreshToken, {
               expires: 1, // 1 day
@@ -134,25 +131,33 @@ api.interceptors.response.use(
               sameSite: 'lax',
             });
           }
-          
+
           // Process queue and retry request
           if (originalRequest) {
             originalRequest.headers['Authorization'] = `Bearer ${newToken}`;
           }
-          
+
           processQueue(null, newToken);
           isHandling401 = false;
-          
+
           if (originalRequest) {
             return api(originalRequest as AxiosRequestConfig);
           }
         } else {
           throw new Error('Failed to refresh token');
         }
-      } catch (refreshError) {
-        processQueue(axiosError);
+      } catch (error) {
+        processQueue(null);
         isHandling401 = false;
-        clearCookiesAndRedirect();
+
+        // Check if the error is related to token refresh
+        if (axios.isAxiosError(error) && error.response?.status === 401) {
+          console.error('Token refresh failed, redirecting to login');
+          clearCookiesAndRedirect();
+        } else {
+          console.error('An unexpected error occurred during token refresh:', error);
+        }
+
         return Promise.reject(axiosError);
       }
     }
@@ -172,7 +177,7 @@ const updateTokensFromHeaders = (response: AxiosResponse) => {
       secure: true,
       sameSite: 'lax',
     });
-    
+
     if (newRefreshToken) {
       Cookies.set('refreshToken', newRefreshToken, {
         expires: 1, // 1 day
@@ -184,37 +189,42 @@ const updateTokensFromHeaders = (response: AxiosResponse) => {
 };
 
 // Helper to clear cookies and redirect
-const clearCookiesAndRedirect = () => {
-  console.log('Clearing cookies and redirecting to login');
+const clearCookiesAndRedirect = (error?: AxiosError) => {
+  if (error && error.response?.status !== 401) {
+    console.warn('Error is not recoverable, clearing cookies and redirecting to login');
+  } else {
+    console.log('Clearing cookies and redirecting to login');
+  }
+
   Cookies.remove('accessToken');
   Cookies.remove('refreshToken');
   Cookies.remove('sellerData');
   Cookies.remove('role');
-  
+
   // Add timestamp to prevent caching
   const timestamp = new Date().getTime();
-  window.location.href = `${getLoginRedirectUrl('seller')}&t=${timestamp}`;
+  window.location.href = `${getLoginRedirectUrl('seller')}?t=${timestamp}`;
 };
 
 // Proactive token refresh
 export const setupTokenRefresh = () => {
   const refreshInterval = 45 * 60 * 1000; // Every 45 minutes
-  
+
   // Check authentication immediately
   if (!hasValidAuth()) {
     console.warn('setupTokenRefresh: No valid auth found, redirecting to login');
     clearCookiesAndRedirect();
     return;
   }
-  
+
   setInterval(async () => {
     const accessToken = Cookies.get('accessToken');
     const refreshToken = Cookies.get('refreshToken');
-    const sellerData = Cookies.get('sellerData');
-    
-    if (accessToken && refreshToken && sellerData) {
+    const sellerDataStr = Cookies.get('sellerData');
+
+    if (accessToken && refreshToken && sellerDataStr) {
       try {
-        const userId = JSON.parse(sellerData).id;
+        const userId = JSON.parse(sellerDataStr).id;
         // Make a request to keep session alive
         await api.get('/wallets/fetch-info', {
           params: {
@@ -222,8 +232,8 @@ export const setupTokenRefresh = () => {
             userId,
           },
         });
-      } catch (err) {
-        console.error('Proactive refresh failed', err);
+      } catch {
+        clearCookiesAndRedirect();
       }
     } else {
       console.warn('Proactive refresh skipped: Missing tokens or seller data');
