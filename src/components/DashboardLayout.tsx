@@ -10,7 +10,7 @@ import Cookies from 'js-cookie';
 import Wallet from './Wallet';
 import CreateWalletOverlay from './CreateWalletOverlay';
 import WithdrawFundsOverlay from './WithdrawFundsOverlay';
-import api, { setupTokenRefresh } from '../lib/api';
+import api, { setupTokenRefresh, validateAuth } from '../lib/api';
 import { getLoginRedirectUrl } from '../config/env';
 
 interface UserProfile {
@@ -50,6 +50,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [walletBalance, setWalletBalance] = useState<number>(0);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [authChecked, setAuthChecked] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   const [unreadNotifications, setUnreadNotifications] = useState<number>(0);
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -63,78 +64,97 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   useEffect(() => {
     console.log('DashboardLayout - Mounting component');
     setIsMounted(true);
-    setupTokenRefresh(); // Start proactive token refresh
-  }, []);
+    
+    // Check authentication immediately
+    const isAuth = validateAuth();
+    setAuthChecked(true);
+    
+    if (!isAuth && !pathname.includes('/auth')) {
+      console.log('DashboardLayout - No valid auth, redirecting to login');
+      window.location.href = loginUrl;
+      return;
+    }
+    
+    // Only set up token refresh if we're authenticated
+    if (isAuth) {
+      setupTokenRefresh();
+    }
+  }, [loginUrl, pathname]);
 
   const loadUserData = useCallback(async () => {
-    if (!isMounted) {
-      console.log('DashboardLayout - Not mounted yet, skipping loadUserData');
+    if (!isMounted || !authChecked) {
+      console.log('DashboardLayout - Not mounted yet or auth not checked, skipping loadUserData');
+      return;
+    }
+
+    // Skip loading data for auth pages
+    if (pathname === '/auth' || pathname.includes('/login') || pathname === '/') {
+      console.log('DashboardLayout - On auth page, skipping data load');
+      setIsLoading(false);
       return;
     }
 
     setIsLoading(true);
     console.log('DashboardLayout loadUserData - Starting');
 
-    // Check if we're on the login page to avoid redirect loops
-    if (pathname === '/login' || pathname.includes('auth')) {
-      console.log('DashboardLayout - On login page, skipping token check');
-      setIsLoading(false);
-      return;
-    }
-
     const accessToken = Cookies.get('accessToken');
     const sellerDataString = Cookies.get('sellerData');
-    console.log(`DashboardLayout - accessToken: ${accessToken ? 'present' : 'missing'}`);
-    console.log(`DashboardLayout - sellerData: ${sellerDataString ? 'present' : 'missing'}`);
-
+    
     if (!accessToken || !sellerDataString) {
       console.log('DashboardLayout - Missing required data, redirecting to login');
-      router.replace(loginUrl);
+      window.location.href = loginUrl;
       setIsLoading(false);
       return;
     }
 
     try {
-      const sellerData: SellerData = JSON.parse(sellerDataString);
-      console.log(`DashboardLayout - Parsed Seller Data: ${JSON.stringify(sellerData)}`);
-      const fullName = `${sellerData.firstName || ''} ${sellerData.lastName || ''}`.trim() || sellerData.email || 'User';
+      const sellerData = JSON.parse(sellerDataString);
+      
+      // Set basic user info immediately from cookies to improve perceived performance
       setUserProfile({
-        name: fullName,
+        name: `${sellerData.firstName || ''} ${sellerData.lastName || ''}`.trim() || sellerData.email || 'User',
         role: sellerData.role || 'SELLER',
         profilePicture: sellerData.profilePicture || '/profile.png',
       });
+      
       setIsWalletActivated(sellerData.walletCreated || false);
 
-      const walletResponse = await api.get(
-        `/wallets/fetch-info?userType=SELLER&userId=${sellerData.id}`
-      );
-      console.log(`DashboardLayout - Wallet API Response: ${JSON.stringify(walletResponse.data)}`);
+      // Fetch additional data in parallel
+      const [walletResponse, notificationsResponse] = await Promise.all([
+        api.get(`/wallets/fetch-info?userType=SELLER&userId=${sellerData.id}`),
+        api.get(`/notifications/all/${sellerData.id}`)
+      ]);
+      
+      // Update state with fetched data
       setWalletBalance(walletResponse.data.wallet.balance || 0);
-
-      const notificationsResponse = await api.get(`/notifications/all/${sellerData.id}`);
-      console.log(`DashboardLayout - Notifications API Response: ${JSON.stringify(notificationsResponse.data)}`);
+      
       const fetchedNotifications = notificationsResponse.data.notifications || [];
       setNotifications(fetchedNotifications);
       setUnreadNotifications(fetchedNotifications.length);
+      
     } catch (error) {
-      console.error(`DashboardLayout - Error fetching data: ${error}`);
-      setUserProfile({ name: 'User', role: 'SELLER', profilePicture: '/profile.png' });
-      setIsWalletActivated(false);
-      setWalletBalance(0);
-      setUnreadNotifications(0);
-      setNotifications([]);
-      // Optionally redirect to login on critical errors
-      router.replace(loginUrl);
+      console.error(`DashboardLayout - Error fetching data:`, error);
+      
+      // Determine if error is auth-related or just a data fetch issue
+      const axiosError = error as any;
+      if (axiosError.response?.status === 401 || axiosError.response?.status === 403) {
+        window.location.href = loginUrl;
+      } else {
+        // For non-auth errors, just use defaults and let the user continue
+        setWalletBalance(0);
+        setUnreadNotifications(0);
+        setNotifications([]);
+      }
     } finally {
       setIsLoading(false);
       console.log('DashboardLayout loadUserData - Ended');
     }
-  }, [isMounted, router, pathname, loginUrl]);
+  }, [isMounted, authChecked, pathname, loginUrl]);
 
   useEffect(() => {
-    if (!isMounted) return;
+    if (!isMounted || !authChecked) return;
     loadUserData();
-  }, [isMounted, loadUserData]);
+  }, [isMounted, authChecked, loadUserData]);
 
   useEffect(() => {
     if (!isWalletActivated) {
@@ -148,8 +168,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     Cookies.remove('refreshToken', { path: '/' });
     Cookies.remove('sellerData', { path: '/' });
     Cookies.remove('role', { path: '/' });
-    router.replace(loginUrl);
-  }, [router, loginUrl]);
+    
+    // Use timestamp to prevent caching
+    const timestamp = new Date().getTime();
+    window.location.href = `${loginUrl}&t=${timestamp}`;
+  }, [loginUrl]);
 
   const toggleTheme = () => setIsDarkMode(!isDarkMode);
   const handleOpenWalletOverlay = () => setIsWalletOverlayOpen(true);
