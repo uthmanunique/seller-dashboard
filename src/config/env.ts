@@ -16,19 +16,19 @@ export const config = {
   API_BASE_URL: () => 'https://api-rebrivo.onrender.com/v1/api',
   MAIN_WEBSITE_BASE_URL: () => {
     if (typeof window === 'undefined') {
-      return 'https://rebrivo.vercel.app'; // Default for SSR
+      return 'https://rebrivo-website.netlify.app/'; // Default for SSR
     }
     return window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
       ? 'http://localhost:3000'
-      : 'https://rebrivo.vercel.app';
+      : 'https://rebrivo-website.netlify.app/';
   },
   DASHBOARD_BASE_URL: () => {
     if (typeof window === 'undefined') {
-      return 'http://rebrivo-seller.vercel.app'; // Default for SSR
+      return 'https://rebrivo-seller-dashboard.netlify.app'; // Default for SSR
     }
     return window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
       ? 'http://localhost:3001'
-      : 'http://rebrivo-seller.vercel.app'; // Updated to new hosted URL
+      : 'https://rebrivo-seller-dashboard.netlify.app'; // Updated to new hosted URL
   },
 };
 

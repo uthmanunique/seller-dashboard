@@ -9,6 +9,7 @@ import Cookies from 'js-cookie';
 import api from '@/src/lib/api';
 import { getLoginRedirectUrl } from '@/src/config/env';
 import { AxiosError } from 'axios';
+import { industries } from '@/src/config/industries'; // Import shared industries
 
 // Interfaces remain unchanged
 interface SellerData {
@@ -114,11 +115,9 @@ export default function AddListingClient() {
     sellerId: '',
   });
 
-  // New state for role guidance message
   const [roleGuidance, setRoleGuidance] = useState<string>('');
 
   useEffect(() => {
-    // Set initial guidance message based on default role
     setRoleGuidance(
       formData.role === 'Owner'
         ? 'Please prepare the following documents (optional): Company Profile, CAC Documents, Memorandum & Articles, Share Allotment Form.'
@@ -294,7 +293,6 @@ export default function AddListingClient() {
         formDataToSend.append('assetsAndInventory', JSON.stringify(formData.assetsAndInventory));
         formDataToSend.append('debtAndLiabilities', JSON.stringify(formData.debtAndLiabilities));
 
-        // Only append files if they exist
         if (formData.companyProfileUrl instanceof File) {
           formDataToSend.append('companyProfileUrl', formData.companyProfileUrl);
         }
@@ -355,14 +353,12 @@ export default function AddListingClient() {
       formData.preferredBuyerType,
       formData.listingType,
     ];
-    // Removed document fields from required checks
     return requiredFields.every((field) => field !== '' && field !== null);
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
-    // Update role guidance message when role changes
     if (name === 'role') {
       setRoleGuidance(
         value === 'Owner'
@@ -572,12 +568,11 @@ export default function AddListingClient() {
                     className="w-full h-10 px-4 border text-gray-600 rounded-lg focus:outline-none focus:border-[#F26E52] appearance-none"
                   >
                     <option value="">Select one</option>
-                    <option value="Agriculture">Agriculture</option>
-                    <option value="Fintech">Fintech</option>
-                    <option value="Healthcare">Healthcare</option>
-                    <option value="Retail">Retail</option>
-                    <option value="Manufacturing">Manufacturing</option>
-                    <option value="ICT">ICT</option>
+                    {industries.map((industry) => (
+                      <option key={industry} value={industry}>
+                        {industry}
+                      </option>
+                    ))}
                   </select>
                   <Image
                     src="/dropdown.png"
@@ -691,6 +686,7 @@ export default function AddListingClient() {
           </div>
         )}
 
+        {/* Steps 2 and 3 remain unchanged */}
         {step === 2 && (
           <div className="max-w-2xl mx-auto">
             <h2 className="text-xl font-bold text-[#011631] mb-2">Add Key Financials & Documents</h2>
@@ -699,6 +695,7 @@ export default function AddListingClient() {
               <p>All fields marked with <span className="text-red-600">*</span> are required.</p>
             </div>
             <div className="space-y-4">
+              {/* Existing fields for Step 2 */}
               <div>
                 <label className="block text-sm font-semibold text-gray-700">Annual Revenue Range <span className="text-red-600">*</span></label>
                 <div className="relative mt-2">

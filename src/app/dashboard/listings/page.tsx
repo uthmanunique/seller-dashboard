@@ -43,7 +43,7 @@ export default function Listings() {
   const [deactivationComment, setDeactivationComment] = useState('');
   const router = useRouter();
 
-  const tabs = ['All', 'Approved', 'Review', 'Sold', 'Deactivation Requested'];
+  const tabs = ['All', 'Active', 'Review', 'Sold', 'Deactivation Requested'];
 
   const deactivationReasons = [
     'Business already sold outside Rebrivo',
@@ -74,7 +74,7 @@ export default function Listings() {
             location: listing.location || 'Unknown',
             value: `₦${(listing.price || 0).toLocaleString()}`,
             status: listing.status === 'PENDING' ? 'Review' :
-                    listing.status === 'APPROVED' ? 'Approved' :
+                    listing.status === 'ACTIVE' ? 'Active' :
                     listing.status === 'SOLD' ? 'Sold' :
                     listing.status === 'PENDING_DEACTIVATION' ? 'Deactivation Requested' : listing.status,
             views: listing.unlockedByBuyers?.length || 0,
@@ -155,7 +155,7 @@ export default function Listings() {
           location: listing.location || 'Unknown',
           value: `₦${(listing.price || 0).toLocaleString()}`,
           status: listing.status === 'PENDING' ? 'Review' :
-                  listing.status === 'APPROVED' ? 'Approved' :
+                  listing.status === 'ACTIVE' ? 'Active' :
                   listing.status === 'SOLD' ? 'Sold' :
                   listing.status === 'PENDING_DEACTIVATION' ? 'Deactivation Requested' : listing.status,
           views: listing.unlockedByBuyers?.length || 0,
@@ -289,7 +289,7 @@ export default function Listings() {
                     <div className="flex items-center space-x-1">
                       <span
                         className={`h-2 w-2 rounded-full ${
-                          listing.status === 'Approved'
+                          listing.status === 'Active'
                             ? 'bg-green-500'
                             : listing.status === 'Review'
                             ? 'bg-yellow-500'
