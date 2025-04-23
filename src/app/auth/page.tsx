@@ -6,7 +6,9 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Cookies from 'js-cookie';
 import Image from 'next/image';
 import axios from 'axios';
+import { config } from '../../config/env';
 
+// Export dynamic to ensure the page is not statically generated
 export const dynamic = 'force-dynamic';
 
 function AuthHandler() {
@@ -17,7 +19,7 @@ function AuthHandler() {
   useEffect(() => {
     const authenticate = async () => {
       try {
-        // Get temporary code from URL
+        // Get code (accessToken) from URL
         const code = searchParams.get('code');
 
         if (!code) {
@@ -28,17 +30,30 @@ function AuthHandler() {
           return;
         }
 
-        // Exchange code for tokens via backend API
-        const response = await axios.post(
-          'https://api-rebrivo.onrender.com/v1/api/auth/seller/verify-code',
-          { code },
-          { headers: { 'Content-Type': 'application/json' } }
-        );
+        // Use the accessToken to fetch seller data
+        const response = await axios.get(`${config.API_BASE_URL()}/wallets/fetch-info`, {
+          headers: {
+            'Authorization': `Bearer ${code}`,
+            'Content-Type': 'application/json',
+          },
+          params: {
+            userType: 'SELLER',
+          },
+        });
 
-        const { accessToken, refreshToken, seller } = response.data;
+        const { user } = response.data;
+        const sellerData = user || response.data; // Adjust based on actual response structure
 
-        if (!accessToken || !refreshToken || !seller) {
-          throw new Error('Invalid authentication data');
+        if (!sellerData) {
+          throw new Error('Invalid seller data');
+        }
+
+        // Extract tokens from headers
+        const accessToken = response.headers['x-access-token'] || code;
+        const refreshToken = response.headers['x-refresh-token'];
+
+        if (!accessToken || !refreshToken) {
+          throw new Error('Missing tokens in response headers');
         }
 
         // Set cookies on the dashboard domain
@@ -54,7 +69,7 @@ function AuthHandler() {
           sameSite: 'lax',
           path: '/',
         });
-        Cookies.set('sellerData', JSON.stringify(seller), {
+        Cookies.set('sellerData', JSON.stringify(sellerData), {
           expires: 1,
           secure: true,
           sameSite: 'lax',
