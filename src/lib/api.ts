@@ -244,8 +244,13 @@ export const setupTokenRefresh = () => {
 
 // Check auth on initial load
 export const validateAuth = () => {
-  if (!hasValidAuth()) {
+  const accessToken = Cookies.get('accessToken');
+  const sellerData = Cookies.get('sellerData');
+  const role = Cookies.get('role');
+
+  if (!accessToken || !sellerData || role !== 'SELLER') {
     console.warn('validateAuth: No valid auth found');
+    clearCookiesAndRedirect();
     return false;
   }
   return true;

@@ -54,17 +54,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   useEffect(() => {
     console.log('DashboardLayout - Mounting component');
     setIsMounted(true);
-
+  
     // Check authentication immediately
     const isAuth = validateAuth();
     setAuthChecked(true);
-
+  
     if (!isAuth && !pathname.includes('/auth')) {
       console.log('DashboardLayout - No valid auth, redirecting to login');
-      router.replace(loginUrl);
+      const timestamp = new Date().getTime();
+      router.replace(`${loginUrl}?t=${timestamp}`);
       return;
     }
-
+  
     // Only set up token refresh if we're authenticated
     if (isAuth) {
       setupTokenRefresh();

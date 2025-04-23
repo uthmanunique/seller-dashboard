@@ -1,56 +1,35 @@
+// src/app/auth/page.tsx
 'use client';
 
 import { useEffect, useState, Suspense } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import Cookies from 'js-cookie';
 import Image from 'next/image';
 
-// Export dynamic to ensure the page is not statically generated
 export const dynamic = 'force-dynamic';
 
 function AuthHandler() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [status, setStatus] = useState('Processing authentication...');
 
   useEffect(() => {
     try {
-      // Extract auth data from URL parameters
-      const token = searchParams.get('token');
-      const refreshToken = searchParams.get('refreshToken');
-      const userDataStr = searchParams.get('userData');
+      // Check for required cookies
+      const accessToken = Cookies.get('accessToken');
+      const refreshToken = Cookies.get('refreshToken');
+      const userDataStr = Cookies.get('sellerData');
+      const role = Cookies.get('role');
 
-      if (!token || !refreshToken || !userDataStr) {
-        setStatus('Missing authentication data');
+      if (!accessToken || !refreshToken || !userDataStr || role !== 'SELLER') {
+        setStatus('Missing authentication data. Redirecting to login...');
+        setTimeout(() => {
+          window.location.href = 'https://rebrivo-website.netlify.app/auth/login?role=seller';
+        }, 1000);
         return;
       }
 
-      // Set cookies in the seller dashboard domain
-      Cookies.set('accessToken', token, {
-        expires: 1 / 24, // 1 hour
-        secure: true,
-        sameSite: 'lax',
-      });
-
-      Cookies.set('refreshToken', refreshToken, {
-        expires: 1, // 1 day
-        secure: true,
-        sameSite: 'lax',
-      });
-
-      Cookies.set('sellerData', userDataStr, {
-        expires: 1,
-        secure: true,
-        sameSite: 'lax',
-      });
-
-      Cookies.set('role', 'SELLER', {
-        expires: 1,
-        secure: true,
-        sameSite: 'lax',
-      });
-
-      // Clean the URL (remove sensitive data from browser history)
+      // Cookies are already set by the login page, so no need to set them again
+      // Clean the URL (remove any query parameters)
       window.history.replaceState({}, document.title, '/dashboard');
 
       // Redirect to dashboard
@@ -59,8 +38,11 @@ function AuthHandler() {
     } catch (error) {
       console.error('Authentication error:', error);
       setStatus('Authentication failed. Please try logging in again.');
+      setTimeout(() => {
+        window.location.href = 'https://rebrivo-website.netlify.app/auth/login?role=seller';
+      }, 1000);
     }
-  }, [router, searchParams]);
+  }, [router]);
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100">
@@ -89,8 +71,8 @@ export default function AuthPage() {
             <h2 className="text-xl font-semibold text-[#011631] mb-2">Loading...</h2>
             <p className="text-sm text-gray-600">Processing authentication...</p>
           </div>
-          </div>
-        }
+        </div>
+      }
     >
       <AuthHandler />
     </Suspense>
