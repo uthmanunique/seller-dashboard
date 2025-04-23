@@ -57,10 +57,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     setIsMounted(true);
   
     // Check authentication immediately
-    const isAuth = validateAuth();
+    const isAuthenticated = validateAuth();
     setAuthChecked(true);
   
-    if (!isAuth && !pathname.includes('/auth')) {
+    if (!isAuthenticated && !pathname.includes('/auth')) {
       console.log('DashboardLayout - No valid auth, redirecting to login');
       const timestamp = new Date().getTime();
       router.replace(`${loginUrl}?t=${timestamp}`);
@@ -68,7 +68,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
   
     // Only set up token refresh if we're authenticated
-    if (isAuth) {
+    if (isAuthenticated) {
       const accessToken = Cookies.get('accessToken');
       if (accessToken) {
         setupTokenRefresh(accessToken);
