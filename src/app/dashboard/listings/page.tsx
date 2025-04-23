@@ -8,17 +8,16 @@ import { toast } from 'react-toastify';
 import api from '../../../lib/api';
 import Cookies from 'js-cookie';
 import { getLoginRedirectUrl } from '../../../config/env';
-import { AxiosError } from 'axios';
 
 interface Listing {
   id: string;
-  businessName?: string;
-  businessCategoryType?: string;
+  businessName?: string; // Added
+  businessCategoryType?: string; // Added
   location?: string;
   price?: number;
   status: string;
-  unlockedByBuyers?: string[];
-  listOfBuyerRequestingService?: string[];
+  unlockedByBuyers?: string[]; // Added
+  listOfBuyerRequestingService?: string[]; // Added
   businessImagesUrls: string[];
   name: string;
   category: string;
@@ -36,10 +35,6 @@ interface Listing {
   companyProfileUrl?: string;
 }
 
-interface ApiListingResponse {
-  listings: Listing[];
-}
-
 export default function Listings() {
   const [activeTab, setActiveTab] = useState('All');
   const [visibleListings, setVisibleListings] = useState(6);
@@ -53,6 +48,7 @@ export default function Listings() {
   const router = useRouter();
 
   const tabs = ['All', 'Active', 'Review', 'Sold', 'Deactivation Requested'];
+
   const deactivationReasons = [
     'Business already sold outside Rebrivo',
     'Changed my mind about selling',
@@ -60,130 +56,73 @@ export default function Listings() {
     'Need to re-evaluate my pricing/positioning',
   ];
 
-  const mapListings = (apiListings: Listing[]): Listing[] => {
-    return apiListings.map((listing) => ({
-      id: listing.id || '',
-      name: listing.businessName || 'Unnamed Listing',
-      category: listing.businessCategoryType || 'Unknown',
-      location: listing.location || 'Unknown',
-      value: `₦${(listing.price || 0).toLocaleString()}`,
-      status:
-        listing.status === 'PENDING'
-          ? 'Review'
-          : listing.status === 'ACTIVE'
-          ? 'Active'
-          : listing.status === 'SOLD'
-          ? 'Sold'
-          : listing.status === 'PENDING_DEACTIVATION'
-          ? 'Deactivation Requested'
-          : listing.status || 'Unknown',
-      views: Array.isArray(listing.unlockedByBuyers) ? listing.unlockedByBuyers.length : 0,
-      inquiries: Array.isArray(listing.listOfBuyerRequestingService)
-        ? listing.listOfBuyerRequestingService.length
-        : 0,
-      image: Array.isArray(listing.businessImagesUrls) && listing.businessImagesUrls[0]
-        ? listing.businessImagesUrls[0]
-        : '/ratel.png',
-      yearEstablished: listing.yearEstablished || 'N/A',
-      reasonForSelling: listing.reasonForSelling || 'Not specified',
-      annualRevenueRange: listing.annualRevenueRange || 'N/A',
-      price: listing.price || 0,
-      isNegotiable: listing.isNegotiable ?? false,
-      businessType: listing.businessType,
-      entityType: listing.entityType,
-      isPremiumSale: listing.isPremiumSale,
-      companyProfileUrl: listing.companyProfileUrl,
-      businessImagesUrls: Array.isArray(listing.businessImagesUrls) ? listing.businessImagesUrls : [],
-      businessName: listing.businessName,
-      businessCategoryType: listing.businessCategoryType,
-      unlockedByBuyers: listing.unlockedByBuyers,
-      listOfBuyerRequestingService: listing.listOfBuyerRequestingService,
-    }));
-  };
+  useEffect(() => {
+    const fetchListings = async () => {
+      setLoading(true);
+      const accessToken = Cookies.get('accessToken');
+      const sellerDataString = Cookies.get('sellerData');
 
-  const fetchListings = async () => {
-    setLoading(true);
-    setError(null);
-    if (process.env.NODE_ENV !== 'production') {
-      console.log('Listings - fetchListings - Starting');
-    }
-
-    const accessToken = Cookies.get('accessToken');
-    const sellerDataString = Cookies.get('sellerData');
-
-    if (!accessToken || !sellerDataString) {
-      if (process.env.NODE_ENV !== 'production') {
-        console.warn('Listings - Missing accessToken or sellerData, redirecting to login');
-      }
-      router.push(`${getLoginRedirectUrl('seller')}?t=${new Date().getTime()}`);
-      return;
-    }
-
-    let sellerData;
-    try {
-      sellerData = JSON.parse(sellerDataString);
-      if (process.env.NODE_ENV !== 'production') {
-        console.log('Listings - Seller Data from cookies:', sellerData);
-      }
-      if (!sellerData.id) {
-        throw new Error('Seller data missing id');
-      }
-    } catch (err) {
-      if (process.env.NODE_ENV !== 'production') {
-        console.error('Listings - Invalid sellerData format:', err);
-      }
-      setError('Invalid user data. Please log in again.');
-      router.push(`${getLoginRedirectUrl('seller')}?t=${new Date().getTime()}`);
-      return;
-    }
-
-    try {
-      const response = await api.get<ApiListingResponse>(
-        `/seller/listings/fetch-all/${sellerData.id}`
-      );
-      if (process.env.NODE_ENV !== 'production') {
-        console.log('Listings - API Response:', response.data);
-      }
-
-      if (response.status === 200 && Array.isArray(response.data.listings)) {
-        const fetchedListings = mapListings(response.data.listings);
-        setListings(fetchedListings);
-        if (process.env.NODE_ENV !== 'production') {
-          console.log('Listings - Data set successfully:', fetchedListings);
-        }
-      } else {
-        throw new Error('Unexpected response structure or status');
-      }
-    } catch (err) {
-      const axiosError = err as AxiosError;
-      if (process.env.NODE_ENV !== 'production') {
-        console.error('Listings - Fetch Error:', axiosError.message, {
-          status: axiosError.response?.status,
-          data: axiosError.response?.data,
-        });
-      }
-
-      if (axiosError.response?.status === 401 || axiosError.response?.status === 403) {
-        if (process.env.NODE_ENV !== 'production') {
-          console.warn('Listings - Unauthorized, relying on api interceptor to redirect');
-        }
-        // The api interceptor in api.ts should handle redirect to login
+      if (!accessToken || !sellerDataString) {
+        router.push(getLoginRedirectUrl('seller'));
         return;
       }
 
-      setError('Failed to load listings. Please try again.');
-      toast.error('Failed to load listings.');
-    } finally {
-      setLoading(false);
-      if (process.env.NODE_ENV !== 'production') {
-        console.log('Listings - fetchListings - Ended');
+      try {
+        const sellerData = JSON.parse(sellerDataString);
+        const response = await api.get(`/seller/listings/fetch-all/${sellerData.id}`);
+        if (response.status === 200) {
+          const fetchedListings = response.data.listings.map((listing: Listing) => ({
+            id: listing.id,
+            name: listing.businessName || 'Unnamed Listing',
+            category: listing.businessCategoryType || 'Unknown',
+            location: listing.location || 'Unknown',
+            value: `₦${(listing.price || 0).toLocaleString()}`,
+            status: listing.status === 'PENDING' ? 'Review' :
+                    listing.status === 'ACTIVE' ? 'Active' :
+                    listing.status === 'SOLD' ? 'Sold' :
+                    listing.status === 'PENDING_DEACTIVATION' ? 'Deactivation Requested' : listing.status,
+            views: listing.unlockedByBuyers?.length || 0,
+            inquiries: listing.listOfBuyerRequestingService?.length || 0,
+            image: listing.businessImagesUrls[0] || '/ratel.png',
+            yearEstablished: listing.yearEstablished || 'N/A',
+            reasonForSelling: listing.reasonForSelling || 'Not specified',
+            annualRevenueRange: listing.annualRevenueRange || 'N/A',
+            price: listing.price || 0,
+            isNegotiable: listing.isNegotiable || false,
+            businessType: listing.businessType,
+            entityType: listing.entityType,
+            isPremiumSale: listing.isPremiumSale,
+            companyProfileUrl: listing.companyProfileUrl,
+            businessImagesUrls: listing.businessImagesUrls || [],
+            businessName: listing.businessName,
+            businessCategoryType: listing.businessCategoryType,
+            unlockedByBuyers: listing.unlockedByBuyers,
+            listOfBuyerRequestingService: listing.listOfBuyerRequestingService,
+          }));
+          setListings(fetchedListings);
+        } else {
+          setError('Unexpected response from server.');
+          toast.error('Failed to load listings.');
+        }
+      } catch {
+        setError('Failed to load listings. Please try again.');
+        toast.error('Failed to load listings.');
+      } finally {
+        setLoading(false);
       }
-    }
-  };
-
-  useEffect(() => {
+    };
     fetchListings();
   }, [router]);
+
+  const filteredListings = listings.filter((listing) =>
+    activeTab === 'All' ? true : listing.status === activeTab
+  );
+
+  const handleLoadMore = () => setVisibleListings((prev) => prev + 6);
+
+  const handleEdit = (listing: Listing) => {
+    router.push(`/dashboard/listings/new?listingId=${listing.id}`);
+  };
 
   const handleDeactivationRequest = async (listingId: string) => {
     if (!deactivationReason) {
@@ -194,7 +133,7 @@ export default function Listings() {
     try {
       const accessToken = Cookies.get('accessToken');
       if (!accessToken) {
-        router.push(`${getLoginRedirectUrl('seller')}?t=${new Date().getTime()}`);
+        router.push(getLoginRedirectUrl('seller'));
         return;
       }
 
@@ -214,26 +153,43 @@ export default function Listings() {
         setSelectedListing(null);
         setDeactivationReason('');
         setDeactivationComment('');
-        await fetchListings(); // Reuse fetchListings to refresh data
+        const sellerData = JSON.parse(Cookies.get('sellerData') || '{}');
+        const updatedResponse = await api.get(`/seller/listings/fetch-all/${sellerData.id}`);
+        setListings(updatedResponse.data.listings.map((listing: Listing) => ({
+          id: listing.id,
+          name: listing.businessName || 'Unnamed Listing',
+          category: listing.businessCategoryType || 'Unknown',
+          location: listing.location || 'Unknown',
+          value: `₦${(listing.price || 0).toLocaleString()}`,
+          status: listing.status === 'PENDING' ? 'Review' :
+                  listing.status === 'ACTIVE' ? 'Active' :
+                  listing.status === 'SOLD' ? 'Sold' :
+                  listing.status === 'PENDING_DEACTIVATION' ? 'Deactivation Requested' : listing.status,
+          views: listing.unlockedByBuyers?.length || 0,
+          inquiries: listing.listOfBuyerRequestingService?.length || 0,
+          image: listing.businessImagesUrls[0] || '/ratel.png',
+          yearEstablished: listing.yearEstablished || 'N/A',
+          reasonForSelling: listing.reasonForSelling || 'Not specified',
+          annualRevenueRange: listing.annualRevenueRange || 'N/A',
+          price: listing.price || 0,
+          isNegotiable: listing.isNegotiable || false,
+          businessType: listing.businessType,
+          entityType: listing.entityType,
+          isPremiumSale: listing.isPremiumSale,
+          companyProfileUrl: listing.companyProfileUrl,
+          businessImagesUrls: listing.businessImagesUrls || [],
+          businessName: listing.businessName,
+          businessCategoryType: listing.businessCategoryType,
+          unlockedByBuyers: listing.unlockedByBuyers,
+          listOfBuyerRequestingService: listing.listOfBuyerRequestingService,
+        })));
       } else {
-        throw new Error('Failed to submit deactivation request');
+        toast.error('Failed to submit deactivation request.');
       }
-    } catch (err) {
-      if (process.env.NODE_ENV !== 'production') {
-        console.error('Listings - Deactivation Request Error:', err);
-      }
+    } catch (err: unknown) {
+      console.error('Error requesting deactivation:', err);
       toast.error('Failed to submit deactivation request.');
     }
-  };
-
-  const filteredListings = listings.filter((listing) =>
-    activeTab === 'All' ? true : listing.status === activeTab
-  );
-
-  const handleLoadMore = () => setVisibleListings((prev) => prev + 6);
-
-  const handleEdit = (listing: Listing) => {
-    router.push(`/dashboard/listings/new?listingId=${listing.id}`);
   };
 
   if (loading) {
@@ -249,7 +205,7 @@ export default function Listings() {
       <div className="p-4 text-center">
         <p className="text-red-500">{error}</p>
         <button
-          onClick={fetchListings}
+          onClick={() => window.location.reload()}
           className="mt-4 bg-[#F26E52] text-white px-4 py-2 rounded-md text-sm"
         >
           Retry
@@ -269,13 +225,7 @@ export default function Listings() {
         </div>
         <Link href="/dashboard/listings/new">
           <button className="flex items-center bg-[#F26E52] text-white px-4 py-3 rounded-md text-xs">
-            <Image
-              src="/add-listing.png"
-              alt="Add Listing"
-              width={16}
-              height={16}
-              className="mr-2"
-            />
+            <Image src="/add-listing.png" alt="Add Listing" width={16} height={16} className="mr-2" />
             Create New Listing
           </button>
         </Link>
