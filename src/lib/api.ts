@@ -261,7 +261,7 @@ export const validateAuth = () => {
     if (sellerData) {
       JSON.parse(sellerData);
     }
-  } catch (err) {
+  } catch {
     console.warn("validateAuth: Invalid sellerData JSON");
     clearCookiesAndRedirect();
     return false;
