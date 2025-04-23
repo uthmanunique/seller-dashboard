@@ -253,13 +253,15 @@ export const validateAuth = () => {
     hasAccessToken: !!accessToken,
     hasSellerData: !!sellerData,
     role,
+    accessTokenValue: accessToken,
+    sellerDataValue: sellerData ? JSON.parse(sellerData) : null,
   });
 
   try {
     if (sellerData) {
-      JSON.parse(sellerData); // Validate JSON
+      JSON.parse(sellerData);
     }
-  } catch{
+  } catch (err) {
     console.warn("validateAuth: Invalid sellerData JSON");
     clearCookiesAndRedirect();
     return false;
