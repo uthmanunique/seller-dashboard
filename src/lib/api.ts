@@ -43,7 +43,8 @@ const processQueue = (error: AxiosError | null, token: string | null = null) => 
 const hasValidAuth = () => {
   const accessToken = Cookies.get('accessToken');
   const sellerData = Cookies.get('sellerData');
-  return !!accessToken && !!sellerData;
+  const role = Cookies.get('role');
+  return !!accessToken && !!sellerData && role === 'SELLER';
 };
 
 // Attach access token to every request
@@ -80,7 +81,7 @@ api.interceptors.response.use(
       }
 
       if (isHandling401) {
-        // Queue the request while refreshing token
+        // Queue the request while checking for new tokens
         return new Promise<string | null>((resolve, reject) => {
           failedQueue.push({ resolve, reject });
         })
@@ -97,67 +98,46 @@ api.interceptors.response.use(
 
       isHandling401 = true;
 
-      // Try to get a new token using refreshToken, if available
-      const refreshToken = Cookies.get('refreshToken');
+      // Check if we have the necessary data
+      const accessToken = Cookies.get('accessToken');
       const sellerDataStr = Cookies.get('sellerData');
 
-      if (!refreshToken || !sellerDataStr) {
-        console.warn('401: Missing refresh token or seller data, redirecting to login');
+      if (!accessToken || !sellerDataStr) {
+        console.warn('401: Missing access token or seller data, redirecting to login');
         isHandling401 = false;
+        processQueue(axiosError);
         clearCookiesAndRedirect();
+        return Promise.reject(axiosError);
       }
 
       try {
-        // Try to refresh the token
-        const response = await axios.post(
-          `${config.API_BASE_URL()}/auth/refresh-token`,
-          { refreshToken },
-          { headers: { 'Content-Type': 'application/json' } }
-        );
+        // Make a request to fetch new tokens via headers
+        const sellerData = JSON.parse(sellerDataStr);
+        await api.get('/wallets/fetch-info', {
+          params: {
+            userType: 'SELLER',
+            userId: sellerData.id,
+          },
+        });
 
-        if (response.status === 200 && response.data.accessToken) {
-          const newToken = response.data.accessToken;
-          // Store the new token
-          Cookies.set('accessToken', newToken, {
-            expires: 1 / 24, // 1 hour
-            secure: true,
-            sameSite: 'lax',
-          });
-
-          if (response.data.refreshToken) {
-            Cookies.set('refreshToken', response.data.refreshToken, {
-              expires: 1, // 1 day
-              secure: true,
-              sameSite: 'lax',
-            });
-          }
-
-          // Process queue and retry request
+        // Tokens should be updated via headers in updateTokensFromHeaders
+        const newToken = Cookies.get('accessToken');
+        if (newToken && newToken !== accessToken) {
+          // New token received, retry original request
           if (originalRequest) {
             originalRequest.headers['Authorization'] = `Bearer ${newToken}`;
           }
-
           processQueue(null, newToken);
           isHandling401 = false;
-
-          if (originalRequest) {
-            return api(originalRequest as AxiosRequestConfig);
-          }
+          return api(originalRequest as AxiosRequestConfig);
         } else {
-          throw new Error('Failed to refresh token');
+          throw new Error('No new access token received');
         }
-      } catch (error) {
-        processQueue(null);
+      } catch (err) {
+        console.error('Failed to fetch new tokens:', err);
+        processQueue(axiosError);
         isHandling401 = false;
-
-        // Check if the error is related to token refresh
-        if (axios.isAxiosError(error) && error.response?.status === 401) {
-          console.error('Token refresh failed, redirecting to login');
-          clearCookiesAndRedirect();
-        } else {
-          console.error('An unexpected error occurred during token refresh:', error);
-        }
-
+        clearCookiesAndRedirect();
         return Promise.reject(axiosError);
       }
     }
@@ -177,14 +157,14 @@ const updateTokensFromHeaders = (response: AxiosResponse) => {
       secure: true,
       sameSite: 'lax',
     });
+  }
 
-    if (newRefreshToken) {
-      Cookies.set('refreshToken', newRefreshToken, {
-        expires: 1, // 1 day
-        secure: true,
-        sameSite: 'lax',
-      });
-    }
+  if (newRefreshToken) {
+    Cookies.set('refreshToken', newRefreshToken, {
+      expires: 1, // 1 day
+      secure: true,
+      sameSite: 'lax',
+    });
   }
 };
 
@@ -219,20 +199,21 @@ export const setupTokenRefresh = () => {
 
   setInterval(async () => {
     const accessToken = Cookies.get('accessToken');
-    const refreshToken = Cookies.get('refreshToken');
     const sellerDataStr = Cookies.get('sellerData');
 
-    if (accessToken && refreshToken && sellerDataStr) {
+    if (accessToken && sellerDataStr) {
       try {
         const userId = JSON.parse(sellerDataStr).id;
-        // Make a request to keep session alive
+        // Make a request to fetch new tokens via headers
         await api.get('/wallets/fetch-info', {
           params: {
             userType: 'SELLER',
             userId,
           },
         });
+        // Tokens are updated via updateTokensFromHeaders
       } catch {
+        console.warn('Proactive token refresh failed, redirecting to login');
         clearCookiesAndRedirect();
       }
     } else {

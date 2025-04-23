@@ -158,11 +158,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     Cookies.remove('refreshToken', { path: '/' });
     Cookies.remove('sellerData', { path: '/' });
     Cookies.remove('role', { path: '/' });
-
-    // Use timestamp to prevent caching
+  
+    // Use getLoginRedirectUrl for correct seller login URL
     const timestamp = new Date().getTime();
-    router.replace(`${loginUrl}?t=${timestamp}`);
-  }, [loginUrl, router]);
+    router.replace(`${getLoginRedirectUrl('seller')}?t=${timestamp}`);
+  }, [router]);
 
   const toggleTheme = () => setIsDarkMode(!isDarkMode);
   const handleOpenWalletOverlay = () => setIsWalletOverlayOpen(true);

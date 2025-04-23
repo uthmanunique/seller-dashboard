@@ -2,47 +2,88 @@
 'use client';
 
 import { useEffect, useState, Suspense } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Cookies from 'js-cookie';
 import Image from 'next/image';
+import axios from 'axios';
 
 export const dynamic = 'force-dynamic';
 
 function AuthHandler() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [status, setStatus] = useState('Processing authentication...');
 
   useEffect(() => {
-    try {
-      // Check for required cookies
-      const accessToken = Cookies.get('accessToken');
-      const refreshToken = Cookies.get('refreshToken');
-      const userDataStr = Cookies.get('sellerData');
-      const role = Cookies.get('role');
+    const authenticate = async () => {
+      try {
+        // Get temporary code from URL
+        const code = searchParams.get('code');
 
-      if (!accessToken || !refreshToken || !userDataStr || role !== 'SELLER') {
-        setStatus('Missing authentication data. Redirecting to login...');
+        if (!code) {
+          setStatus('Missing authentication code');
+          setTimeout(() => {
+            window.location.href = 'https://rebrivo-website.netlify.app/auth/login?role=seller';
+          }, 1000);
+          return;
+        }
+
+        // Exchange code for tokens via backend API
+        const response = await axios.post(
+          'https://api-rebrivo.onrender.com/v1/api/auth/seller/verify-code',
+          { code },
+          { headers: { 'Content-Type': 'application/json' } }
+        );
+
+        const { accessToken, refreshToken, seller } = response.data;
+
+        if (!accessToken || !refreshToken || !seller) {
+          throw new Error('Invalid authentication data');
+        }
+
+        // Set cookies on the dashboard domain
+        Cookies.set('accessToken', accessToken, {
+          expires: 1 / 24, // 1 hour
+          secure: true,
+          sameSite: 'lax',
+          path: '/',
+        });
+        Cookies.set('refreshToken', refreshToken, {
+          expires: 1, // 1 day
+          secure: true,
+          sameSite: 'lax',
+          path: '/',
+        });
+        Cookies.set('sellerData', JSON.stringify(seller), {
+          expires: 1,
+          secure: true,
+          sameSite: 'lax',
+          path: '/',
+        });
+        Cookies.set('role', 'SELLER', {
+          expires: 1,
+          secure: true,
+          sameSite: 'lax',
+          path: '/',
+        });
+
+        // Clean the URL
+        window.history.replaceState({}, document.title, '/dashboard');
+
+        // Redirect to dashboard
+        setStatus('Authentication successful! Redirecting...');
+        setTimeout(() => router.push('/dashboard'), 1000);
+      } catch (error) {
+        console.error('Authentication error:', error);
+        setStatus('Authentication failed. Please try logging in again.');
         setTimeout(() => {
           window.location.href = 'https://rebrivo-website.netlify.app/auth/login?role=seller';
         }, 1000);
-        return;
       }
+    };
 
-      // Cookies are already set by the login page, so no need to set them again
-      // Clean the URL (remove any query parameters)
-      window.history.replaceState({}, document.title, '/dashboard');
-
-      // Redirect to dashboard
-      setStatus('Authentication successful! Redirecting...');
-      setTimeout(() => router.push('/dashboard'), 1000);
-    } catch (error) {
-      console.error('Authentication error:', error);
-      setStatus('Authentication failed. Please try logging in again.');
-      setTimeout(() => {
-        window.location.href = 'https://rebrivo-website.netlify.app/auth/login?role=seller';
-      }, 1000);
-    }
-  }, [router]);
+    authenticate();
+  }, [router, searchParams]);
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100">
