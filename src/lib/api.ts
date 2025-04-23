@@ -3,9 +3,9 @@ import axios, {
   AxiosResponse,
   AxiosRequestConfig,
   InternalAxiosRequestConfig,
-} from 'axios';
-import Cookies from 'js-cookie';
-import { config, getLoginRedirectUrl } from '../config/env';
+} from "axios";
+import Cookies from "js-cookie";
+import { config, getLoginRedirectUrl } from "../config/env";
 
 // Define a custom interface for Axios request config with _retry
 interface CustomAxiosRequestConfig extends InternalAxiosRequestConfig {
@@ -20,7 +20,7 @@ interface FailedQueueItem {
 // Create axios instance
 const api = axios.create({
   baseURL: config.API_BASE_URL(),
-  headers: { 'Content-Type': 'application/json' },
+  headers: { "Content-Type": "application/json" },
   withCredentials: true, // Important for CORS with credentials
 });
 
@@ -41,17 +41,17 @@ const processQueue = (error: AxiosError | null, token: string | null = null) => 
 
 // Check if we have valid auth data
 const hasValidAuth = () => {
-  const accessToken = Cookies.get('accessToken');
-  const sellerData = Cookies.get('sellerData');
-  const role = Cookies.get('role');
-  return !!accessToken && !!sellerData && role === 'SELLER';
+  const accessToken = Cookies.get("accessToken");
+  const sellerData = Cookies.get("sellerData");
+  const role = Cookies.get("role");
+  return !!accessToken && !!sellerData && role === "SELLER";
 };
 
 // Attach access token to every request
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
-  const accessToken = Cookies.get('accessToken');
+  const accessToken = Cookies.get("accessToken");
   if (accessToken) {
-    config.headers['Authorization'] = `Bearer ${accessToken}`;
+    config.headers["Authorization"] = `Bearer ${accessToken}`;
   } else {
     console.log(`No access token for request: ${config.url}`);
   }
@@ -87,10 +87,10 @@ api.interceptors.response.use(
         })
           .then((token) => {
             if (originalRequest && token) {
-              originalRequest.headers['Authorization'] = `Bearer ${token}`;
+              originalRequest.headers["Authorization"] = `Bearer ${token}`;
               return api(originalRequest as AxiosRequestConfig);
             } else {
-              return Promise.reject('Original request or token is undefined');
+              return Promise.reject("Original request or token is undefined");
             }
           })
           .catch((err) => Promise.reject(err));
@@ -99,11 +99,11 @@ api.interceptors.response.use(
       isHandling401 = true;
 
       // Check if we have the necessary data
-      const accessToken = Cookies.get('accessToken');
-      const sellerDataStr = Cookies.get('sellerData');
+      const accessToken = Cookies.get("accessToken");
+      const sellerDataStr = Cookies.get("sellerData");
 
       if (!accessToken || !sellerDataStr) {
-        console.warn('401: Missing access token or seller data, redirecting to login');
+        console.warn("401: Missing access token or seller data, redirecting to login");
         isHandling401 = false;
         processQueue(axiosError);
         clearCookiesAndRedirect();
@@ -113,28 +113,28 @@ api.interceptors.response.use(
       try {
         // Make a request to fetch new tokens via headers
         const sellerData = JSON.parse(sellerDataStr);
-        await api.get('/wallets/fetch-info', {
+        await api.get("/wallets/fetch-info", {
           params: {
-            userType: 'SELLER',
+            userType: "SELLER",
             userId: sellerData.id,
           },
         });
 
         // Tokens should be updated via headers in updateTokensFromHeaders
-        const newToken = Cookies.get('accessToken');
+        const newToken = Cookies.get("accessToken");
         if (newToken && newToken !== accessToken) {
           // New token received, retry original request
           if (originalRequest) {
-            originalRequest.headers['Authorization'] = `Bearer ${newToken}`;
+            originalRequest.headers["Authorization"] = `Bearer ${newToken}`;
           }
           processQueue(null, newToken);
           isHandling401 = false;
           return api(originalRequest as AxiosRequestConfig);
         } else {
-          throw new Error('No new access token received');
+          throw new Error("No new access token received");
         }
       } catch (err) {
-        console.error('Failed to fetch new tokens:', err);
+        console.error("Failed to fetch new tokens:", err);
         processQueue(axiosError);
         isHandling401 = false;
         clearCookiesAndRedirect();
@@ -148,22 +148,28 @@ api.interceptors.response.use(
 
 // Helper to update tokens from response headers
 const updateTokensFromHeaders = (response: AxiosResponse) => {
-  const newAccessToken = response.headers['x-access-token'] as string | undefined;
-  const newRefreshToken = response.headers['x-refresh-token'] as string | undefined;
+  const newAccessToken = response.headers["x-access-token"] as string | undefined;
+  const newRefreshToken = response.headers["x-refresh-token"] as string | undefined;
+
+  console.log("Updating tokens from headers:", { newAccessToken, newRefreshToken });
 
   if (newAccessToken) {
-    Cookies.set('accessToken', newAccessToken, {
+    Cookies.set("accessToken", newAccessToken, {
       expires: 1 / 24, // 1 hour
       secure: true,
-      sameSite: 'lax',
+      sameSite: "lax",
+      path: "/",
+      domain: ".netlify.app", // Ensure cookies are shared across subdomains
     });
   }
 
   if (newRefreshToken) {
-    Cookies.set('refreshToken', newRefreshToken, {
+    Cookies.set("refreshToken", newRefreshToken, {
       expires: 1, // 1 day
       secure: true,
-      sameSite: 'lax',
+      sameSite: "lax",
+      path: "/",
+      domain: ".netlify.app",
     });
   }
 };
@@ -171,19 +177,19 @@ const updateTokensFromHeaders = (response: AxiosResponse) => {
 // Helper to clear cookies and redirect
 const clearCookiesAndRedirect = (error?: AxiosError) => {
   if (error && error.response?.status !== 401) {
-    console.warn('Error is not recoverable, clearing cookies and redirecting to login');
+    console.warn("Error is not recoverable, clearing cookies and redirecting to login");
   } else {
-    console.log('Clearing cookies and redirecting to login');
+    console.log("Clearing cookies and redirecting to login");
   }
 
-  Cookies.remove('accessToken');
-  Cookies.remove('refreshToken');
-  Cookies.remove('sellerData');
-  Cookies.remove('role');
+  Cookies.remove("accessToken", { path: "/", domain: ".netlify.app" });
+  Cookies.remove("refreshToken", { path: "/", domain: ".netlify.app" });
+  Cookies.remove("sellerData", { path: "/", domain: ".netlify.app" });
+  Cookies.remove("role", { path: "/", domain: ".netlify.app" });
 
   // Add timestamp to prevent caching
   const timestamp = new Date().getTime();
-  window.location.href = `${getLoginRedirectUrl('seller')}?t=${timestamp}`;
+  window.location.href = `${getLoginRedirectUrl("seller")}?t=${timestamp}`;
 };
 
 // Proactive token refresh
@@ -192,32 +198,32 @@ export const setupTokenRefresh = () => {
 
   // Check authentication immediately
   if (!hasValidAuth()) {
-    console.warn('setupTokenRefresh: No valid auth found, redirecting to login');
+    console.warn("setupTokenRefresh: No valid auth found, redirecting to login");
     clearCookiesAndRedirect();
     return;
   }
 
   setInterval(async () => {
-    const accessToken = Cookies.get('accessToken');
-    const sellerDataStr = Cookies.get('sellerData');
+    const accessToken = Cookies.get("accessToken");
+    const sellerDataStr = Cookies.get("sellerData");
 
     if (accessToken && sellerDataStr) {
       try {
         const userId = JSON.parse(sellerDataStr).id;
         // Make a request to fetch new tokens via headers
-        await api.get('/wallets/fetch-info', {
+        await api.get("/wallets/fetch-info", {
           params: {
-            userType: 'SELLER',
+            userType: "SELLER",
             userId,
           },
         });
         // Tokens are updated via updateTokensFromHeaders
       } catch {
-        console.warn('Proactive token refresh failed, redirecting to login');
+        console.warn("Proactive token refresh failed, redirecting to login");
         clearCookiesAndRedirect();
       }
     } else {
-      console.warn('Proactive refresh skipped: Missing tokens or seller data');
+      console.warn("Proactive refresh skipped: Missing tokens or seller data");
       clearCookiesAndRedirect();
     }
   }, refreshInterval);
@@ -225,12 +231,14 @@ export const setupTokenRefresh = () => {
 
 // Check auth on initial load
 export const validateAuth = () => {
-  const accessToken = Cookies.get('accessToken');
-  const sellerData = Cookies.get('sellerData');
-  const role = Cookies.get('role');
+  const accessToken = Cookies.get("accessToken");
+  const sellerData = Cookies.get("sellerData");
+  const role = Cookies.get("role");
 
-  if (!accessToken || !sellerData || role !== 'SELLER') {
-    console.warn('validateAuth: No valid auth found');
+  console.log("Validating auth:", { accessToken, sellerData, role });
+
+  if (!accessToken || !sellerData || role !== "SELLER") {
+    console.warn("validateAuth: No valid auth found");
     clearCookiesAndRedirect();
     return false;
   }
