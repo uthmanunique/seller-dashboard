@@ -1,130 +1,66 @@
-"use client";
+'use client';
 
-import { useEffect, useState, useCallback, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import Cookies from "js-cookie";
-import Image from "next/image";
-import axios from "axios";
-import { config } from "../../config/env";
+import { useEffect, useState, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import Cookies from 'js-cookie';
+import Image from 'next/image';
 
 // Export dynamic to ensure the page is not statically generated
-export const dynamic = "force-dynamic";
+export const dynamic = 'force-dynamic';
 
 function AuthHandler() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [status, setStatus] = useState("Processing authentication...");
+  const [status, setStatus] = useState('Processing authentication...');
 
-  const authenticate = useCallback(async () => {
+  useEffect(() => {
     try {
-      const code = searchParams.get("code");
-      if (!code) {
-        setStatus("Missing authentication code");
-        setTimeout(() => {
-          window.location.href = "https://rebrivo-website.netlify.app/auth/login?role=seller";
-        }, 1000);
+      // Extract auth data from URL parameters
+      const token = searchParams.get('token');
+      const refreshToken = searchParams.get('refreshToken');
+      const userDataStr = searchParams.get('userData');
+
+      if (!token || !refreshToken || !userDataStr) {
+        setStatus('Missing authentication data');
         return;
       }
 
-      const response = await axios.get(`${config.API_BASE_URL()}/wallets/fetch-info`, {
-        headers: {
-          Authorization: `Bearer ${code}`,
-          "Content-Type": "application/json",
-        },
-        params: { userType: "SELLER" },
-      });
-
-      const { user } = response.data;
-      const sellerData = user || response.data;
-      if (!sellerData) {
-        throw new Error("Invalid seller data");
-      }
-
-      const accessToken = response.headers["x-access-token"] || code;
-      const refreshToken = response.headers["x-refresh-token"];
-
-      const cookieDomain = window.location.hostname.includes('localhost')
-        ? undefined
-        : '.netlify.app';
-      const cookieSecure = window.location.protocol === 'https:';
-
-      console.log("Setting cookies with domain:", cookieDomain);
-
-      const cookieOptions = {
-        path: "/",
-        secure: cookieSecure,
-        sameSite: "lax" as const,
-        domain: cookieDomain,
-      };
-
-      Cookies.set("accessToken", accessToken, {
-        ...cookieOptions,
+      // Set cookies in the seller dashboard domain
+      Cookies.set('accessToken', token, {
         expires: 1 / 24, // 1 hour
+        secure: true,
+        sameSite: 'lax',
       });
 
-      if (refreshToken) {
-        Cookies.set("refreshToken", refreshToken, {
-          ...cookieOptions,
-          expires: 7, // 7 days
-        });
-      }
+      Cookies.set('refreshToken', refreshToken, {
+        expires: 1, // 1 day
+        secure: true,
+        sameSite: 'lax',
+      });
 
-      Cookies.set("sellerData", JSON.stringify(sellerData), {
-        ...cookieOptions,
+      Cookies.set('sellerData', userDataStr, {
         expires: 1,
+        secure: true,
+        sameSite: 'lax',
       });
 
-      Cookies.set("role", "SELLER", {
-        ...cookieOptions,
+      Cookies.set('role', 'SELLER', {
         expires: 1,
+        secure: true,
+        sameSite: 'lax',
       });
 
-      // Verify cookies were set properly with delay to ensure they're saved
-      setTimeout(() => {
-        const verifyAccessToken = Cookies.get("accessToken");
-        const verifyRole = Cookies.get("role");
-        const verifySellerData = Cookies.get("sellerData");
+      // Clean the URL (remove sensitive data from browser history)
+      window.history.replaceState({}, document.title, '/dashboard');
 
-        console.log("Verifying cookies:", {
-          accessToken: !!verifyAccessToken,
-          role: verifyRole,
-          hasSellerData: !!verifySellerData,
-        });
-
-        if (!verifyAccessToken || verifyRole !== "SELLER" || !verifySellerData) {
-          console.error("Failed to set cookies properly");
-          setStatus("Authentication error: Failed to set cookies");
-          return;
-        }
-
-        // Clean the URL to prevent token exposure
-        window.history.replaceState({}, document.title, "/dashboard");
-
-        // Wait a bit longer to ensure cookies are fully processed
-        setStatus("Authentication successful! Redirecting...");
-        setTimeout(() => router.push("/dashboard"), 500);
-      }, 500);
+      // Redirect to dashboard
+      setStatus('Authentication successful! Redirecting...');
+      setTimeout(() => router.push('/dashboard'), 1000);
     } catch (error) {
-      console.error("Authentication error:", error);
-      setStatus("Authentication failed. Please try logging in again.");
-
-      const cookieDomain = window.location.hostname.includes('netlify.app') ? '.netlify.app' : undefined;
-      ['accessToken', 'refreshToken', 'sellerData', 'role'].forEach(cookie => {
-        Cookies.remove(cookie, { path: "/" });
-        if (cookieDomain) {
-          Cookies.remove(cookie, { path: "/", domain: cookieDomain });
-        }
-      });
-
-      setTimeout(() => {
-        window.location.href = "https://rebrivo-website.netlify.app/auth/login?role=seller";
-      }, 1000);
+      console.error('Authentication error:', error);
+      setStatus('Authentication failed. Please try logging in again.');
     }
-  }, [router, searchParams]); // Dependencies for useCallback
-
-  useEffect(() => {
-    authenticate();
-  }, [authenticate]); // Add authenticate to dependency array
+  }, [router, searchParams]);
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100">

@@ -9,7 +9,7 @@ import Cookies from 'js-cookie';
 import Wallet from './Wallet';
 import CreateWalletOverlay from './CreateWalletOverlay';
 import WithdrawFundsOverlay from './WithdrawFundsOverlay';
-import api, { validateAuth, setupTokenRefresh } from '../lib/api'; // Adjust the import path as necessary
+import api, { setupTokenRefresh, validateAuth } from '../lib/api';
 import { getLoginRedirectUrl } from '../config/env';
 import { AxiosError } from 'axios';
 
@@ -52,51 +52,58 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const loginUrl = getLoginRedirectUrl('seller');
 
   useEffect(() => {
-    console.log('DashboardLayout - Mounting component');
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('DashboardLayout - Mounting component');
+    }
     setIsMounted(true);
 
     // Check authentication immediately
-    const isAuthenticated = validateAuth();
+    const isAuth = validateAuth();
     setAuthChecked(true);
 
-    console.log('DashboardLayout - Initial auth check:', { isAuthenticated });
-
-    if (!isAuthenticated && !pathname.includes('/auth')) {
-      console.log('DashboardLayout - No valid auth, redirecting to login');
-      const timestamp = new Date().getTime();
-      router.replace(`${loginUrl}?t=${timestamp}`);
+    if (!isAuth && !pathname.includes('/auth')) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('DashboardLayout - No valid auth, redirecting to login');
+      }
+      router.replace(loginUrl);
       return;
     }
 
-    // Only set up token refresh if authenticated and not on auth page
-    if (isAuthenticated && !pathname.includes('/auth')) {
-      const cleanup = setupTokenRefresh();
-      return cleanup;
+    // Only set up token refresh if we're authenticated
+    if (isAuth) {
+      setupTokenRefresh();
     }
   }, [loginUrl, pathname, router]);
 
   const loadUserData = useCallback(async () => {
-    if (!isMounted || !authChecked || pathname.includes('/auth')) {
-      console.log('DashboardLayout - Skipping loadUserData:', { isMounted, authChecked, pathname });
+    if (!isMounted || !authChecked) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('DashboardLayout - Not mounted yet or auth not checked, skipping loadUserData');
+      }
+      return;
+    }
+
+    // Skip loading data for auth pages
+    if (pathname === '/auth' || pathname.includes('/login') || pathname === '/') {
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('DashboardLayout - On auth page, skipping data load');
+      }
       setIsLoading(false);
       return;
     }
 
     setIsLoading(true);
-    console.log('DashboardLayout - loadUserData starting');
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('DashboardLayout loadUserData - Starting');
+    }
 
     const accessToken = Cookies.get('accessToken');
     const sellerDataString = Cookies.get('sellerData');
-    const role = Cookies.get('role');
 
-    console.log('DashboardLayout - Cookie check:', {
-      accessToken: !!accessToken,
-      sellerData: !!sellerDataString,
-      role,
-    });
-
-    if (!accessToken || !sellerDataString || role !== 'SELLER') {
-      console.log('DashboardLayout - Missing required data, redirecting to login');
+    if (!accessToken || !sellerDataString) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('DashboardLayout - Missing required data, redirecting to login');
+      }
       router.replace(loginUrl);
       setIsLoading(false);
       return;
@@ -104,6 +111,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
     try {
       const sellerData = JSON.parse(sellerDataString);
+
+      // Set basic user info immediately from cookies to improve perceived performance
       setUserProfile({
         name: `${sellerData.firstName || ''} ${sellerData.lastName || ''}`.trim() || sellerData.email || 'User',
         role: sellerData.role || 'SELLER',
@@ -112,30 +121,38 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       setIsWalletActivated(sellerData.walletCreated || false);
 
+      // Fetch additional data in parallel
       const [walletResponse, notificationsResponse] = await Promise.all([
         api.get(`/wallets/fetch-info?userType=SELLER&userId=${sellerData.id}`),
         api.get(`/notifications/all/${sellerData.id}`),
       ]);
 
-      setWalletBalance(walletResponse.data.wallet?.balance || 0);
+      // Update state with fetched data
+      setWalletBalance(walletResponse.data.wallet.balance || 0);
+
       const fetchedNotifications = notificationsResponse.data.notifications || [];
       setNotifications(fetchedNotifications);
       setUnreadNotifications(fetchedNotifications.length);
     } catch (error) {
-      console.error('DashboardLayout - Error fetching data:', error);
+      if (process.env.NODE_ENV !== 'production') {
+        console.error(`DashboardLayout - Error fetching data:`, error);
+      }
+
+      // Determine if error is auth-related or just a data fetch issue
       const axiosError = error as AxiosError;
       if (axiosError.response?.status === 401 || axiosError.response?.status === 403) {
-        console.log('DashboardLayout - Auth error, redirecting to login');
         router.replace(loginUrl);
       } else {
-        // For non-auth errors, use defaults and let the user continue
+        // For non-auth errors, just use defaults and let the user continue
         setWalletBalance(0);
         setUnreadNotifications(0);
         setNotifications([]);
       }
     } finally {
       setIsLoading(false);
-      console.log('DashboardLayout - loadUserData ended');
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('DashboardLayout loadUserData - Ended');
+      }
     }
   }, [isMounted, authChecked, pathname, loginUrl, router]);
 
@@ -151,21 +168,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }, [pathname, isWalletActivated]);
 
   const handleLogout = useCallback(() => {
-    console.log('DashboardLayout - Logging out');
-    const cookieDomain = window.location.hostname.includes('localhost') ? undefined : '.netlify.app';
-    const removeOptions = { path: '/' };
-    const domainOptions = cookieDomain ? { ...removeOptions, domain: cookieDomain } : removeOptions;
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('DashboardLayout - Logging out');
+    }
+    Cookies.remove('accessToken', { path: '/' });
+    Cookies.remove('refreshToken', { path: '/' });
+    Cookies.remove('sellerData', { path: '/' });
+    Cookies.remove('role', { path: '/' });
 
-    ['accessToken', 'refreshToken', 'sellerData', 'role'].forEach(cookie => {
-      Cookies.remove(cookie, removeOptions);
-      if (cookieDomain) {
-        Cookies.remove(cookie, domainOptions);
-      }
-    });
-
+    // Use timestamp to prevent caching
     const timestamp = new Date().getTime();
     router.replace(`${loginUrl}?t=${timestamp}`);
-  }, [router, loginUrl]);
+  }, [loginUrl, router]);
 
   const toggleTheme = () => setIsDarkMode(!isDarkMode);
   const handleOpenWalletOverlay = () => setIsWalletOverlayOpen(true);
@@ -209,8 +223,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     )
   ) : null;
 
-  if (isLoading || !isMounted || !authChecked) {
-    console.log('DashboardLayout - Rendering loading state');
+  if (isLoading || !isMounted) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('DashboardLayout - Rendering loading state');
+    }
     return (
       <div className="flex justify-center items-center h-screen">
         <Image src="/loader.gif" alt="Loading" width={32} height={32} className="animate-spin" />
@@ -218,7 +234,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     );
   }
 
-  console.log(`DashboardLayout - Rendering main layout, userProfile: ${JSON.stringify(userProfile)}`);
+  if (process.env.NODE_ENV !== 'production') {
+    console.log(`DashboardLayout - Rendering main layout, userProfile: ${JSON.stringify(userProfile)}`);
+  }
 
   return (
     <div className="flex flex-col min-h-screen">

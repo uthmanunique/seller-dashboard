@@ -3,9 +3,9 @@ import axios, {
   AxiosResponse,
   AxiosRequestConfig,
   InternalAxiosRequestConfig,
-} from "axios";
-import Cookies from "js-cookie";
-import { config, getLoginRedirectUrl } from "../config/env";
+} from 'axios';
+import Cookies from 'js-cookie';
+import { config, getLoginRedirectUrl } from '../config/env';
 
 // Define a custom interface for Axios request config with _retry
 interface CustomAxiosRequestConfig extends InternalAxiosRequestConfig {
@@ -20,7 +20,7 @@ interface FailedQueueItem {
 // Create axios instance
 const api = axios.create({
   baseURL: config.API_BASE_URL(),
-  headers: { "Content-Type": "application/json" },
+  headers: { 'Content-Type': 'application/json' },
   withCredentials: true, // Important for CORS with credentials
 });
 
@@ -39,22 +39,18 @@ const processQueue = (error: AxiosError | null, token: string | null = null) => 
   failedQueue = [];
 };
 
-// Get cookie domain based on environment
-const getCookieDomain = () => {
-  if (typeof window === 'undefined') return undefined;
-
-  return window.location.hostname === 'localhost'
-    ? undefined // No domain for localhost
-    : window.location.hostname.includes('netlify.app')
-      ? '.netlify.app' // For Netlify domains
-      : undefined; // Default to current domain only
+// Check if we have valid auth data
+const hasValidAuth = () => {
+  const accessToken = Cookies.get('accessToken');
+  const sellerData = Cookies.get('sellerData');
+  return !!accessToken && !!sellerData;
 };
 
 // Attach access token to every request
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
-  const accessToken = Cookies.get("accessToken");
+  const accessToken = Cookies.get('accessToken');
   if (accessToken) {
-    config.headers["Authorization"] = `Bearer ${accessToken}`;
+    config.headers['Authorization'] = `Bearer ${accessToken}`;
   } else {
     console.log(`No access token for request: ${config.url}`);
   }
@@ -84,95 +80,74 @@ api.interceptors.response.use(
       }
 
       if (isHandling401) {
-        // Queue the request while checking for new tokens
+        // Queue the request while refreshing token
         return new Promise<string | null>((resolve, reject) => {
           failedQueue.push({ resolve, reject });
         })
           .then((token) => {
             if (originalRequest && token) {
-              originalRequest.headers["Authorization"] = `Bearer ${token}`;
+              originalRequest.headers['Authorization'] = `Bearer ${token}`;
               return api(originalRequest as AxiosRequestConfig);
             } else {
-              return Promise.reject("Original request or token is undefined");
+              return Promise.reject('Original request or token is undefined');
             }
           })
-          .catch(() => Promise.reject());
+          .catch((err) => Promise.reject(err));
       }
 
       isHandling401 = true;
 
-      // Check if we have the necessary data
-      const refreshToken = Cookies.get("refreshToken");
-      const sellerDataStr = Cookies.get("sellerData");
-      const role = Cookies.get("role");
+      // Try to get a new token using refreshToken, if available
+      const refreshToken = Cookies.get('refreshToken');
+      const sellerDataStr = Cookies.get('sellerData');
 
-      console.log("401 detected, checking auth:", {
-        hasAccessToken: !!Cookies.get("accessToken"),
-        hasRefreshToken: !!refreshToken,
-        hasSellerData: !!sellerDataStr,
-        role,
-      });
-
-      // Check if we have enough data to attempt token refresh
-      if (!refreshToken || !sellerDataStr || role !== "SELLER") {
-        console.warn("401: Missing refresh token or seller data, redirecting to login");
+      if (!refreshToken || !sellerDataStr) {
+        console.warn('401: Missing refresh token or seller data, redirecting to login');
         isHandling401 = false;
-        processQueue(axiosError);
         clearCookiesAndRedirect();
         return Promise.reject(axiosError);
       }
 
       try {
-        // Attempt to refresh tokens using refresh token
-        JSON.parse(sellerDataStr); // Validate JSON, but no need to store result
+        // Try to refresh the token
         const response = await axios.post(
           `${config.API_BASE_URL()}/auth/refresh-token`,
           { refreshToken },
-          {
-            headers: { "Content-Type": "application/json" },
-          }
+          { headers: { 'Content-Type': 'application/json' } }
         );
 
-        // Extract new tokens
-        const newAccessToken = response.data.accessToken || response.headers["x-access-token"];
-        const newRefreshToken = response.data.refreshToken || response.headers["x-refresh-token"];
-
-        if (!newAccessToken) {
-          throw new Error("No new access token received");
-        }
-
-        // Update cookies with new tokens
-        const cookieDomain = getCookieDomain();
-        const cookieSecure = typeof window !== 'undefined' && window.location.protocol === 'https:';
-
-        Cookies.set("accessToken", newAccessToken, {
-          expires: 1 / 24, // 1 hour
-          secure: cookieSecure,
-          sameSite: "lax",
-          path: "/",
-          domain: cookieDomain,
-        });
-
-        if (newRefreshToken) {
-          Cookies.set("refreshToken", newRefreshToken, {
-            expires: 7, // 7 days
-            secure: cookieSecure,
-            sameSite: "lax",
-            path: "/",
-            domain: cookieDomain,
+        if (response.status === 200 && response.data.accessToken) {
+          const newToken = response.data.accessToken;
+          // Store the new token
+          Cookies.set('accessToken', newToken, {
+            expires: 1 / 24, // 1 hour
+            secure: true,
+            sameSite: 'lax',
           });
-        }
 
-        // Update the original request with new token and retry
-        if (originalRequest) {
-          originalRequest.headers["Authorization"] = `Bearer ${newAccessToken}`;
-        }
+          if (response.data.refreshToken) {
+            Cookies.set('refreshToken', response.data.refreshToken, {
+              expires: 1, // 1 day
+              secure: true,
+              sameSite: 'lax',
+            });
+          }
 
-        processQueue(null, newAccessToken);
-        isHandling401 = false;
-        return api(originalRequest as AxiosRequestConfig);
-      } catch (err) {
-        console.error("Failed to refresh tokens:", err);
+          // Process queue and retry request
+          if (originalRequest) {
+            originalRequest.headers['Authorization'] = `Bearer ${newToken}`;
+          }
+
+          processQueue(null, newToken);
+          isHandling401 = false;
+
+          if (originalRequest) {
+            return api(originalRequest as AxiosRequestConfig);
+          }
+        } else {
+          throw new Error('Failed to refresh token');
+        }
+      } catch {
         processQueue(axiosError);
         isHandling401 = false;
         clearCookiesAndRedirect();
@@ -186,155 +161,85 @@ api.interceptors.response.use(
 
 // Helper to update tokens from response headers
 const updateTokensFromHeaders = (response: AxiosResponse) => {
-  const newAccessToken = response.headers["x-access-token"] as string | undefined;
-  const newRefreshToken = response.headers["x-refresh-token"] as string | undefined;
-
-  if (newAccessToken || newRefreshToken) {
-    console.log("Updating tokens from headers:", {
-      hasNewAccessToken: !!newAccessToken,
-      hasNewRefreshToken: !!newRefreshToken,
-    });
-  }
+  const newAccessToken = response.headers['x-access-token'] as string | undefined;
+  const newRefreshToken = response.headers['x-refresh-token'] as string | undefined;
 
   if (newAccessToken) {
-    const cookieDomain = getCookieDomain();
-    const cookieSecure = typeof window !== 'undefined' && window.location.protocol === 'https:';
-
-    Cookies.set("accessToken", newAccessToken, {
+    Cookies.set('accessToken', newAccessToken, {
       expires: 1 / 24, // 1 hour
-      secure: cookieSecure,
-      sameSite: "lax",
-      path: "/",
-      domain: cookieDomain,
+      secure: true,
+      sameSite: 'lax',
     });
-  }
 
-  if (newRefreshToken) {
-    const cookieDomain = getCookieDomain();
-    const cookieSecure = typeof window !== 'undefined' && window.location.protocol === 'https:';
-
-    Cookies.set("refreshToken", newRefreshToken, {
-      expires: 7, // 7 days
-      secure: cookieSecure,
-      sameSite: "lax",
-      path: "/",
-      domain: cookieDomain,
-    });
+    if (newRefreshToken) {
+      Cookies.set('refreshToken', newRefreshToken, {
+        expires: 1, // 1 day
+        secure: true,
+        sameSite: 'lax',
+      });
+    }
   }
 };
 
 // Helper to clear cookies and redirect
-const clearCookiesAndRedirect = (error?: AxiosError) => {
-  console.warn("Clearing cookies and redirecting to login", { error });
+const clearCookiesAndRedirect = () => {
+  console.log('Clearing cookies and redirecting to login');
+  Cookies.remove('accessToken');
+  Cookies.remove('refreshToken');
+  Cookies.remove('sellerData');
+  Cookies.remove('role');
 
-  const cookieDomain = getCookieDomain();
-  const removeOptions = { path: "/" };
-  const domainOptions = cookieDomain ? { ...removeOptions, domain: cookieDomain } : removeOptions;
-
-  // Remove cookies for both current domain and shared domain
-  ["accessToken", "refreshToken", "sellerData", "role"].forEach((cookie) => {
-    Cookies.remove(cookie, removeOptions);
-    if (cookieDomain) {
-      Cookies.remove(cookie, domainOptions);
-    }
-  });
-
+  // Add timestamp to prevent caching
   const timestamp = new Date().getTime();
-  window.location.href = `${getLoginRedirectUrl("seller")}?t=${timestamp}`;
+  window.location.href = `${getLoginRedirectUrl('seller')}?t=${timestamp}`;
+};
+
+// Proactive token refresh
+export const setupTokenRefresh = () => {
+  const refreshInterval = 45 * 60 * 1000; // Every 45 minutes
+
+  // Check authentication immediately
+  if (!hasValidAuth()) {
+    console.warn('setupTokenRefresh: No valid auth found, redirecting to login');
+    clearCookiesAndRedirect();
+    return;
+  }
+
+  setInterval(async () => {
+    const accessToken = Cookies.get('accessToken');
+    const refreshToken = Cookies.get('refreshToken');
+    const sellerDataStr = Cookies.get('sellerData');
+
+    if (accessToken && refreshToken && sellerDataStr) {
+      try {
+        const userId = JSON.parse(sellerDataStr).id;
+        // Make a request to keep session alive
+        await api.get('/wallets/fetch-info', {
+          params: {
+            userType: 'SELLER',
+            userId,
+          },
+        });
+      } catch {
+        clearCookiesAndRedirect();
+      }
+    } else {
+      console.warn('Proactive refresh skipped: Missing tokens or seller data');
+      clearCookiesAndRedirect();
+    }
+  }, refreshInterval);
 };
 
 // Check auth on initial load
 export const validateAuth = () => {
-  const accessToken = Cookies.get("accessToken");
-  const sellerData = Cookies.get("sellerData");
-  const role = Cookies.get("role");
-
-  console.log("Validating auth:", {
-    hasAccessToken: !!accessToken,
-    hasSellerData: !!sellerData,
-    role,
-    accessTokenValue: accessToken,
-    sellerDataValue: sellerData ? JSON.parse(sellerData) : null,
-  });
-
-  try {
-    if (sellerData) {
-      JSON.parse(sellerData);
-    }
-  } catch {
-    console.warn("validateAuth: Invalid sellerData JSON");
-    clearCookiesAndRedirect();
-    return false;
-  }
-
-  if (!accessToken || !sellerData || role !== "SELLER") {
-    console.warn("validateAuth: No valid auth found", { accessToken, sellerData, role });
-    clearCookiesAndRedirect();
+  if (!hasValidAuth()) {
+    console.warn('validateAuth: No valid auth found');
     return false;
   }
   return true;
 };
 
-// Function to proactively refresh tokens
-export const setupTokenRefresh = () => {
-  const refreshInterval = 5 * 60 * 1000; // 5 minutes
-
-  const refreshTokens = async () => {
-    const refreshToken = Cookies.get("refreshToken");
-    if (!refreshToken) {
-      console.warn("Token refresh: Missing refresh token");
-      return;
-    }
-
-    try {
-      const response = await axios.post(
-        `${config.API_BASE_URL()}/auth/refresh-token`,
-        { refreshToken },
-        { headers: { "Content-Type": "application/json" } }
-      );
-
-      const newAccessToken = response.data.accessToken || response.headers["x-access-token"];
-      const newRefreshToken = response.data.refreshToken || response.headers["x-refresh-token"];
-
-      if (!newAccessToken) {
-        throw new Error("No new access token received");
-      }
-
-      const cookieDomain = getCookieDomain();
-      const cookieSecure = typeof window !== 'undefined' && window.location.protocol === 'https:';
-
-      Cookies.set("accessToken", newAccessToken, {
-        expires: 1 / 24, // 1 hour
-        secure: cookieSecure,
-        sameSite: "lax",
-        path: "/",
-        domain: cookieDomain,
-      });
-
-      if (newRefreshToken) {
-        Cookies.set("refreshToken", newRefreshToken, {
-          expires: 7, // 7 days
-          secure: cookieSecure,
-          sameSite: "lax",
-          path: "/",
-          domain: cookieDomain,
-        });
-      }
-
-      console.log("Token refreshed successfully");
-    } catch {
-      console.error("Failed to refresh tokens");
-      // Don’t clear cookies here; let 401 handler deal with it
-    }
-  };
-
-  const intervalId = setInterval(refreshTokens, refreshInterval);
-  return () => clearInterval(intervalId);
-};
-
 export default api;
-
-
 
 
 // // src/lib/api.ts
