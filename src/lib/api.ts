@@ -96,7 +96,7 @@ api.interceptors.response.use(
               return Promise.reject("Original request or token is undefined");
             }
           })
-          .catch((err) => Promise.reject(err));
+          .catch(() => Promise.reject());
       }
 
       isHandling401 = true;
