@@ -40,12 +40,6 @@ const processQueue = (error: AxiosError | null, token: string | null = null) => 
 };
 
 // Check if we have valid auth data
-const hasValidAuth = () => {
-  const accessToken = Cookies.get("accessToken");
-  const sellerData = Cookies.get("sellerData");
-  const role = Cookies.get("role");
-  return !!accessToken && !!sellerData && role === "SELLER";
-};
 
 // Attach access token to every request
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
@@ -176,12 +170,23 @@ const updateTokensFromHeaders = (response: AxiosResponse) => {
 
 // Helper to clear cookies and redirect
 const clearCookiesAndRedirect = (error?: AxiosError) => {
-  if (error && error.response?.status !== 401) {
-    console.warn("Error is not recoverable, clearing cookies and redirecting to login");
-  } else {
-    console.log("Clearing cookies and redirecting to login");
-  }
+  console.warn("Clearing cookies and redirecting to login", { error });
+  
+  // Log current cookie values to debug
+  console.log("Current cookies before clearing:", {
+    accessToken: Cookies.get("accessToken"),
+    role: Cookies.get("role"),
+    sellerData: Cookies.get("sellerData")
+  });
 
+  // Remove cookies from all potential domains
+  // For local development
+  Cookies.remove("accessToken", { path: "/" });
+  Cookies.remove("refreshToken", { path: "/" });
+  Cookies.remove("sellerData", { path: "/" });
+  Cookies.remove("role", { path: "/" });
+  
+  // For production with netlify domain
   Cookies.remove("accessToken", { path: "/", domain: ".netlify.app" });
   Cookies.remove("refreshToken", { path: "/", domain: ".netlify.app" });
   Cookies.remove("sellerData", { path: "/", domain: ".netlify.app" });
@@ -190,43 +195,6 @@ const clearCookiesAndRedirect = (error?: AxiosError) => {
   // Add timestamp to prevent caching
   const timestamp = new Date().getTime();
   window.location.href = `${getLoginRedirectUrl("seller")}?t=${timestamp}`;
-};
-
-// Proactive token refresh
-export const setupTokenRefresh = () => {
-  const refreshInterval = 45 * 60 * 1000; // Every 45 minutes
-
-  // Check authentication immediately
-  if (!hasValidAuth()) {
-    console.warn("setupTokenRefresh: No valid auth found, redirecting to login");
-    clearCookiesAndRedirect();
-    return;
-  }
-
-  setInterval(async () => {
-    const accessToken = Cookies.get("accessToken");
-    const sellerDataStr = Cookies.get("sellerData");
-
-    if (accessToken && sellerDataStr) {
-      try {
-        const userId = JSON.parse(sellerDataStr).id;
-        // Make a request to fetch new tokens via headers
-        await api.get("/wallets/fetch-info", {
-          params: {
-            userType: "SELLER",
-            userId,
-          },
-        });
-        // Tokens are updated via updateTokensFromHeaders
-      } catch {
-        console.warn("Proactive token refresh failed, redirecting to login");
-        clearCookiesAndRedirect();
-      }
-    } else {
-      console.warn("Proactive refresh skipped: Missing tokens or seller data");
-      clearCookiesAndRedirect();
-    }
-  }, refreshInterval);
 };
 
 // Check auth on initial load

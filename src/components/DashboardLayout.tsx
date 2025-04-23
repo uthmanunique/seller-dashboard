@@ -9,7 +9,8 @@ import Cookies from 'js-cookie';
 import Wallet from './Wallet';
 import CreateWalletOverlay from './CreateWalletOverlay';
 import WithdrawFundsOverlay from './WithdrawFundsOverlay';
-import api, { setupTokenRefresh, validateAuth } from '../lib/api';
+import api, { validateAuth } from '../lib/api';
+import setupTokenRefresh from '../lib/api';
 import { getLoginRedirectUrl } from '../config/env';
 import { AxiosError } from 'axios';
 
@@ -68,7 +69,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   
     // Only set up token refresh if we're authenticated
     if (isAuth) {
-      setupTokenRefresh();
+      const accessToken = Cookies.get('accessToken');
+      if (accessToken) {
+        setupTokenRefresh(accessToken);
+      }
     }
   }, [loginUrl, pathname, router]);
 
