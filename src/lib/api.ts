@@ -1,5 +1,3 @@
-// api.ts - Improved token management and interceptors
-
 import axios, {
   AxiosError,
   AxiosResponse,
@@ -44,11 +42,11 @@ const processQueue = (error: AxiosError | null, token: string | null = null) => 
 // Get cookie domain based on environment
 const getCookieDomain = () => {
   if (typeof window === 'undefined') return undefined;
-  
-  return window.location.hostname === 'localhost' 
+
+  return window.location.hostname === 'localhost'
     ? undefined // No domain for localhost
-    : window.location.hostname.includes('netlify.app') 
-      ? '.netlify.app' // For netlify domains
+    : window.location.hostname.includes('netlify.app')
+      ? '.netlify.app' // For Netlify domains
       : undefined; // Default to current domain only
 };
 
@@ -105,15 +103,14 @@ api.interceptors.response.use(
 
       // Check if we have the necessary data
       const refreshToken = Cookies.get("refreshToken");
-      const accessToken = Cookies.get("accessToken");
       const sellerDataStr = Cookies.get("sellerData");
       const role = Cookies.get("role");
 
       console.log("401 detected, checking auth:", {
-        hasAccessToken: !!accessToken,
+        hasAccessToken: !!Cookies.get("accessToken"),
         hasRefreshToken: !!refreshToken,
         hasSellerData: !!sellerDataStr,
-        role
+        role,
       });
 
       // Check if we have enough data to attempt token refresh
@@ -127,6 +124,7 @@ api.interceptors.response.use(
 
       try {
         // Attempt to refresh tokens using refresh token
+        JSON.parse(sellerDataStr); // Validate JSON, but no need to store result
         const response = await axios.post(
           `${config.API_BASE_URL()}/auth/refresh-token`,
           { refreshToken },
@@ -169,7 +167,7 @@ api.interceptors.response.use(
         if (originalRequest) {
           originalRequest.headers["Authorization"] = `Bearer ${newAccessToken}`;
         }
-        
+
         processQueue(null, newAccessToken);
         isHandling401 = false;
         return api(originalRequest as AxiosRequestConfig);
@@ -192,16 +190,16 @@ const updateTokensFromHeaders = (response: AxiosResponse) => {
   const newRefreshToken = response.headers["x-refresh-token"] as string | undefined;
 
   if (newAccessToken || newRefreshToken) {
-    console.log("Updating tokens from headers:", { 
-      hasNewAccessToken: !!newAccessToken, 
-      hasNewRefreshToken: !!newRefreshToken 
+    console.log("Updating tokens from headers:", {
+      hasNewAccessToken: !!newAccessToken,
+      hasNewRefreshToken: !!newRefreshToken,
     });
   }
 
   if (newAccessToken) {
     const cookieDomain = getCookieDomain();
     const cookieSecure = typeof window !== 'undefined' && window.location.protocol === 'https:';
-    
+
     Cookies.set("accessToken", newAccessToken, {
       expires: 1 / 24, // 1 hour
       secure: cookieSecure,
@@ -214,7 +212,7 @@ const updateTokensFromHeaders = (response: AxiosResponse) => {
   if (newRefreshToken) {
     const cookieDomain = getCookieDomain();
     const cookieSecure = typeof window !== 'undefined' && window.location.protocol === 'https:';
-    
+
     Cookies.set("refreshToken", newRefreshToken, {
       expires: 7, // 7 days
       secure: cookieSecure,
@@ -228,36 +226,19 @@ const updateTokensFromHeaders = (response: AxiosResponse) => {
 // Helper to clear cookies and redirect
 const clearCookiesAndRedirect = (error?: AxiosError) => {
   console.warn("Clearing cookies and redirecting to login", { error });
-  
-  // Log current cookie values to debug
-  console.log("Current cookies before clearing:", {
-    accessToken: Cookies.get("accessToken"),
-    refreshToken: Cookies.get("refreshToken"),
-    role: Cookies.get("role"),
-    sellerData: Cookies.get("sellerData")
-  });
 
   const cookieDomain = getCookieDomain();
-  
-  // Remove cookies with proper domain
   const removeOptions = { path: "/" };
   const domainOptions = cookieDomain ? { ...removeOptions, domain: cookieDomain } : removeOptions;
-  
-  // Remove cookies
-  Cookies.remove("accessToken", removeOptions);
-  Cookies.remove("refreshToken", removeOptions);
-  Cookies.remove("sellerData", removeOptions);
-  Cookies.remove("role", removeOptions);
-  
-  // Also try with domain if applicable
-  if (cookieDomain) {
-    Cookies.remove("accessToken", domainOptions);
-    Cookies.remove("refreshToken", domainOptions);
-    Cookies.remove("sellerData", domainOptions);
-    Cookies.remove("role", domainOptions);
-  }
 
-  // Add timestamp to prevent caching
+  // Remove cookies for both current domain and shared domain
+  ["accessToken", "refreshToken", "sellerData", "role"].forEach((cookie) => {
+    Cookies.remove(cookie, removeOptions);
+    if (cookieDomain) {
+      Cookies.remove(cookie, domainOptions);
+    }
+  });
+
   const timestamp = new Date().getTime();
   window.location.href = `${getLoginRedirectUrl("seller")}?t=${timestamp}`;
 };
@@ -268,14 +249,24 @@ export const validateAuth = () => {
   const sellerData = Cookies.get("sellerData");
   const role = Cookies.get("role");
 
-  console.log("Validating auth:", { 
-    hasAccessToken: !!accessToken, 
-    hasSellerData: !!sellerData, 
-    role 
+  console.log("Validating auth:", {
+    hasAccessToken: !!accessToken,
+    hasSellerData: !!sellerData,
+    role,
   });
 
+  try {
+    if (sellerData) {
+      JSON.parse(sellerData); // Validate JSON
+    }
+  } catch{
+    console.warn("validateAuth: Invalid sellerData JSON");
+    clearCookiesAndRedirect();
+    return false;
+  }
+
   if (!accessToken || !sellerData || role !== "SELLER") {
-    console.warn("validateAuth: No valid auth found");
+    console.warn("validateAuth: No valid auth found", { accessToken, sellerData, role });
     clearCookiesAndRedirect();
     return false;
   }
@@ -284,38 +275,58 @@ export const validateAuth = () => {
 
 // Function to proactively refresh tokens
 export const setupTokenRefresh = () => {
-  // Check tokens every 5 minutes
   const refreshInterval = 5 * 60 * 1000; // 5 minutes
-  
+
   const refreshTokens = async () => {
-    const accessToken = Cookies.get("accessToken");
     const refreshToken = Cookies.get("refreshToken");
-    
-    if (!accessToken || !refreshToken) {
-      console.warn("Token refresh: Missing tokens");
+    if (!refreshToken) {
+      console.warn("Token refresh: Missing refresh token");
       return;
     }
-    
+
     try {
-      // Silent refresh using the refresh token
-      await axios.post(
+      const response = await axios.post(
         `${config.API_BASE_URL()}/auth/refresh-token`,
         { refreshToken },
-        {
-          headers: { "Content-Type": "application/json" },
-        }
+        { headers: { "Content-Type": "application/json" } }
       );
-      
+
+      const newAccessToken = response.data.accessToken || response.headers["x-access-token"];
+      const newRefreshToken = response.data.refreshToken || response.headers["x-refresh-token"];
+
+      if (!newAccessToken) {
+        throw new Error("No new access token received");
+      }
+
+      const cookieDomain = getCookieDomain();
+      const cookieSecure = typeof window !== 'undefined' && window.location.protocol === 'https:';
+
+      Cookies.set("accessToken", newAccessToken, {
+        expires: 1 / 24, // 1 hour
+        secure: cookieSecure,
+        sameSite: "lax",
+        path: "/",
+        domain: cookieDomain,
+      });
+
+      if (newRefreshToken) {
+        Cookies.set("refreshToken", newRefreshToken, {
+          expires: 7, // 7 days
+          secure: cookieSecure,
+          sameSite: "lax",
+          path: "/",
+          domain: cookieDomain,
+        });
+      }
+
       console.log("Token refreshed successfully");
-    } catch (err) {
-      console.error("Failed to refresh tokens:", err);
+    } catch {
+      console.error("Failed to refresh tokens");
+      // Don’t clear cookies here; let 401 handler deal with it
     }
   };
-  
-  // Set up interval
+
   const intervalId = setInterval(refreshTokens, refreshInterval);
-  
-  // Clean up on unmount
   return () => clearInterval(intervalId);
 };
 

@@ -9,8 +9,7 @@ import Cookies from 'js-cookie';
 import Wallet from './Wallet';
 import CreateWalletOverlay from './CreateWalletOverlay';
 import WithdrawFundsOverlay from './WithdrawFundsOverlay';
-import api, { validateAuth } from '../lib/api';
-import setupTokenRefresh from '../lib/api';
+import api, { validateAuth, setupTokenRefresh } from '../lib/api'; // Adjust the import path as necessary
 import { getLoginRedirectUrl } from '../config/env';
 import { AxiosError } from 'axios';
 
@@ -55,47 +54,48 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   useEffect(() => {
     console.log('DashboardLayout - Mounting component');
     setIsMounted(true);
-  
+
     // Check authentication immediately
     const isAuthenticated = validateAuth();
     setAuthChecked(true);
-  
+
+    console.log('DashboardLayout - Initial auth check:', { isAuthenticated });
+
     if (!isAuthenticated && !pathname.includes('/auth')) {
       console.log('DashboardLayout - No valid auth, redirecting to login');
       const timestamp = new Date().getTime();
       router.replace(`${loginUrl}?t=${timestamp}`);
       return;
     }
-  
-    // Only set up token refresh if we're authenticated
-    if (isAuthenticated) {
-      const accessToken = Cookies.get('accessToken');
-      if (accessToken) {
-        setupTokenRefresh(accessToken);
-      }
+
+    // Only set up token refresh if authenticated and not on auth page
+    if (isAuthenticated && !pathname.includes('/auth')) {
+      const cleanup = setupTokenRefresh();
+      return cleanup;
     }
   }, [loginUrl, pathname, router]);
 
   const loadUserData = useCallback(async () => {
-    if (!isMounted || !authChecked) {
-      console.log('DashboardLayout - Not mounted yet or auth not checked, skipping loadUserData');
-      return;
-    }
-
-    // Skip loading data for auth pages
-    if (pathname === '/auth' || pathname.includes('/login') || pathname === '/') {
-      console.log('DashboardLayout - On auth page, skipping data load');
+    if (!isMounted || !authChecked || pathname.includes('/auth')) {
+      console.log('DashboardLayout - Skipping loadUserData:', { isMounted, authChecked, pathname });
       setIsLoading(false);
       return;
     }
 
     setIsLoading(true);
-    console.log('DashboardLayout loadUserData - Starting');
+    console.log('DashboardLayout - loadUserData starting');
 
     const accessToken = Cookies.get('accessToken');
     const sellerDataString = Cookies.get('sellerData');
+    const role = Cookies.get('role');
 
-    if (!accessToken || !sellerDataString) {
+    console.log('DashboardLayout - Cookie check:', {
+      accessToken: !!accessToken,
+      sellerData: !!sellerDataString,
+      role,
+    });
+
+    if (!accessToken || !sellerDataString || role !== 'SELLER') {
       console.log('DashboardLayout - Missing required data, redirecting to login');
       router.replace(loginUrl);
       setIsLoading(false);
@@ -104,8 +104,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
     try {
       const sellerData = JSON.parse(sellerDataString);
-
-      // Set basic user info immediately from cookies to improve perceived performance
       setUserProfile({
         name: `${sellerData.firstName || ''} ${sellerData.lastName || ''}`.trim() || sellerData.email || 'User',
         role: sellerData.role || 'SELLER',
@@ -114,34 +112,30 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       setIsWalletActivated(sellerData.walletCreated || false);
 
-      // Fetch additional data in parallel
       const [walletResponse, notificationsResponse] = await Promise.all([
         api.get(`/wallets/fetch-info?userType=SELLER&userId=${sellerData.id}`),
         api.get(`/notifications/all/${sellerData.id}`),
       ]);
 
-      // Update state with fetched data
-      setWalletBalance(walletResponse.data.wallet.balance || 0);
-
+      setWalletBalance(walletResponse.data.wallet?.balance || 0);
       const fetchedNotifications = notificationsResponse.data.notifications || [];
       setNotifications(fetchedNotifications);
       setUnreadNotifications(fetchedNotifications.length);
     } catch (error) {
-      console.error(`DashboardLayout - Error fetching data:`, error);
-
-      // Determine if error is auth-related or just a data fetch issue
+      console.error('DashboardLayout - Error fetching data:', error);
       const axiosError = error as AxiosError;
       if (axiosError.response?.status === 401 || axiosError.response?.status === 403) {
+        console.log('DashboardLayout - Auth error, redirecting to login');
         router.replace(loginUrl);
       } else {
-        // For non-auth errors, just use defaults and let the user continue
+        // For non-auth errors, use defaults and let the user continue
         setWalletBalance(0);
         setUnreadNotifications(0);
         setNotifications([]);
       }
     } finally {
       setIsLoading(false);
-      console.log('DashboardLayout loadUserData - Ended');
+      console.log('DashboardLayout - loadUserData ended');
     }
   }, [isMounted, authChecked, pathname, loginUrl, router]);
 
@@ -158,15 +152,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const handleLogout = useCallback(() => {
     console.log('DashboardLayout - Logging out');
-    Cookies.remove('accessToken', { path: '/' });
-    Cookies.remove('refreshToken', { path: '/' });
-    Cookies.remove('sellerData', { path: '/' });
-    Cookies.remove('role', { path: '/' });
-  
-    // Use getLoginRedirectUrl for correct seller login URL
+    const cookieDomain = window.location.hostname.includes('localhost') ? undefined : '.netlify.app';
+    const removeOptions = { path: '/' };
+    const domainOptions = cookieDomain ? { ...removeOptions, domain: cookieDomain } : removeOptions;
+
+    ['accessToken', 'refreshToken', 'sellerData', 'role'].forEach(cookie => {
+      Cookies.remove(cookie, removeOptions);
+      if (cookieDomain) {
+        Cookies.remove(cookie, domainOptions);
+      }
+    });
+
     const timestamp = new Date().getTime();
-    router.replace(`${getLoginRedirectUrl('seller')}?t=${timestamp}`);
-  }, [router]);
+    router.replace(`${loginUrl}?t=${timestamp}`);
+  }, [router, loginUrl]);
 
   const toggleTheme = () => setIsDarkMode(!isDarkMode);
   const handleOpenWalletOverlay = () => setIsWalletOverlayOpen(true);
@@ -210,7 +209,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     )
   ) : null;
 
-  if (isLoading || !isMounted) {
+  if (isLoading || !isMounted || !authChecked) {
     console.log('DashboardLayout - Rendering loading state');
     return (
       <div className="flex justify-center items-center h-screen">
