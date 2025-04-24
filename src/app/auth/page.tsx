@@ -1,5 +1,7 @@
-import { useEffect, useState, Suspense } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+'use client'; // This must be the first line in the file
+
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Cookies from 'js-cookie';
 import Image from 'next/image';
 
@@ -8,7 +10,6 @@ export const dynamic = 'force-dynamic';
 
 function AuthHandler() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [status, setStatus] = useState('Processing authentication...');
 
   useEffect(() => {
@@ -81,7 +82,7 @@ function AuthHandler() {
       console.error('Authentication error:', error);
       setStatus('Authentication failed. Please try logging in again.');
     }
-  }, [router, searchParams]);
+  }, [router]); // Remove searchParams dependency
 
   return (
     <div className="flex h-screen flex-col items-center justify-center bg-gray-50">
@@ -107,22 +108,5 @@ function AuthHandler() {
 }
 
 export default function AuthPage() {
-  return (
-    <Suspense fallback={
-      <div className="flex h-screen flex-col items-center justify-center bg-gray-50">
-        <div className="w-full max-w-md rounded-xl bg-white p-8 shadow-lg">
-          <div className="flex flex-col items-center justify-center">
-            <h1 className="mb-4 text-2xl font-bold text-[#011631]">
-              Loading...
-            </h1>
-            <p className="text-center text-gray-600">
-              Processing authentication...
-            </p>
-          </div>
-        </div>
-      </div>
-    }>
-      <AuthHandler />
-    </Suspense>
-  );
+  return <AuthHandler />;
 }
