@@ -1,6 +1,6 @@
-"use client";
+'use client';
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import Cookies from 'js-cookie';
 
 interface UserData {
@@ -11,7 +11,6 @@ interface UserData {
   walletCreated?: boolean;
   id?: string;
   role?: string;
-  // Additional fields as necessary
 }
 
 interface User {
@@ -73,17 +72,30 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   // Login: set cookies and update context state
-  const login = ({ token, refreshToken, role, userData }: { token: string; refreshToken: string; role: string; userData: UserData }) => {
-    Cookies.set('accessToken', token, { expires: 1 / 24, secure: true, sameSite: 'lax' });
-    Cookies.set('refreshToken', refreshToken, { expires: 1, secure: true, sameSite: 'lax' });
-    Cookies.set('role', role, { expires: 1, secure: true, sameSite: 'lax' });
-    if (role.toUpperCase() === 'SELLER') {
-      Cookies.set('sellerData', JSON.stringify(userData), { expires: 1, secure: true, sameSite: 'lax' });
-    } else if (role.toUpperCase() === 'BUYER') {
-      Cookies.set('buyerData', JSON.stringify(userData), { expires: 1, secure: true, sameSite: 'lax' });
-    }
-    setUser({ token, refreshToken, role, data: userData });
-  };
+  const login = useCallback(
+    ({
+      token,
+      refreshToken,
+      role,
+      userData,
+    }: {
+      token: string;
+      refreshToken: string;
+      role: string;
+      userData: UserData;
+    }) => {
+      Cookies.set('accessToken', token, { expires: 1 / 24, secure: true, sameSite: 'lax' });
+      Cookies.set('refreshToken', refreshToken, { expires: 1, secure: true, sameSite: 'lax' });
+      Cookies.set('role', role, { expires: 1, secure: true, sameSite: 'lax' });
+      if (role.toUpperCase() === 'SELLER') {
+        Cookies.set('sellerData', JSON.stringify(userData), { expires: 1, secure: true, sameSite: 'lax' });
+      } else if (role.toUpperCase() === 'BUYER') {
+        Cookies.set('buyerData', JSON.stringify(userData), { expires: 1, secure: true, sameSite: 'lax' });
+      }
+      setUser({ token, refreshToken, role, data: userData });
+    },
+    []
+  );
 
   // Logout: clear cookies and reset user state
   const logout = () => {
@@ -95,7 +107,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setUser(null);
   };
 
-  // NEW: Check if URL hash contains token data and process it
+  // Check if URL hash contains token data and process it
   useEffect(() => {
     if (typeof window !== 'undefined' && window.location.hash) {
       try {
@@ -113,7 +125,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           window.history.replaceState(null, '', window.location.pathname);
         }
       } catch (error) {
-        console.error("Failed to parse authentication data from URL hash", error);
+        console.error('Failed to parse authentication data from URL hash', error);
       }
     }
   }, [login]);
@@ -128,7 +140,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {
-    throw new Error("useAuth must be used within an AuthProvider");
+    throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
 };

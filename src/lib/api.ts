@@ -1,6 +1,6 @@
 import axios from 'axios';
 import Cookies from 'js-cookie';
-import { config, getLoginRedirectUrl } from '../config/env';
+import { config } from '../config/env';
 
 interface Credentials {
   email: string;
@@ -78,6 +78,11 @@ export const handleLogin = async (credentials: Credentials) => {
         secure: true,
         sameSite: 'lax',
       });
+      Cookies.set('role', seller.role || 'SELLER', {
+        expires: 7,
+        secure: true,
+        sameSite: 'lax',
+      });
     }
     return response;
   } catch (error) {
@@ -91,16 +96,6 @@ const hasValidAuth = () => {
   const accessToken = Cookies.get('accessToken');
   const sellerData = Cookies.get('sellerData');
   return !!accessToken && !!sellerData;
-};
-
-// Helper to clear cookies and redirect (only use when explicitly needed, not on 401)
-const clearCookiesAndRedirect = () => {
-  console.log('Clearing cookies and redirecting to login');
-  Cookies.remove('accessToken');
-  Cookies.remove('refreshToken');
-  Cookies.remove('sellerData');
-  const timestamp = new Date().getTime();
-  window.location.href = `${getLoginRedirectUrl('seller')}?t=${timestamp}`;
 };
 
 // Validate auth on initial load
