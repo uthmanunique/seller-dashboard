@@ -15,44 +15,55 @@ function AuthHandler() {
 
   useEffect(() => {
     try {
-      // Extract auth data from URL parameters
-      const token = searchParams.get('token');
-      const refreshToken = searchParams.get('refreshToken');
-      const userDataStr = searchParams.get('userData');
-
-      if (!token || !refreshToken || !userDataStr) {
+      // Get the encoded state parameter
+      const stateParam = searchParams.get('state');
+      
+      if (!stateParam) {
         setStatus('Missing authentication data');
         return;
       }
-
+      
+      // Decode the state
+      const stateStr = atob(stateParam);
+      const state = JSON.parse(stateStr);
+      
+      const token = state.token;
+      const refreshToken = state.refreshToken;
+      const userData = state.userData;
+      
+      if (!token || !refreshToken || !userData) {
+        setStatus('Invalid authentication data');
+        return;
+      }
+  
       // Set cookies in the seller dashboard domain
       Cookies.set('accessToken', token, {
         expires: 1 / 24, // 1 hour
         secure: true,
         sameSite: 'lax',
       });
-
+  
       Cookies.set('refreshToken', refreshToken, {
         expires: 1, // 1 day
         secure: true,
         sameSite: 'lax',
       });
-
-      Cookies.set('sellerData', userDataStr, {
+  
+      Cookies.set('sellerData', JSON.stringify(userData), {
         expires: 1,
         secure: true,
         sameSite: 'lax',
       });
-
+  
       Cookies.set('role', 'SELLER', {
         expires: 1,
         secure: true,
         sameSite: 'lax',
       });
-
+  
       // Clean the URL (remove sensitive data from browser history)
       window.history.replaceState({}, document.title, '/dashboard');
-
+  
       // Redirect to dashboard
       setStatus('Authentication successful! Redirecting...');
       setTimeout(() => router.push('/dashboard'), 1000);
