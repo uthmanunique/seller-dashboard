@@ -14,28 +14,40 @@ function AuthHandler() {
 
   useEffect(() => {
     try {
-      // Retrieve auth data from sessionStorage
+      console.log("Starting authentication process..."); // Debugging log
+  
       const stateStr = sessionStorage.getItem("authData");
+      console.log("Retrieved authData from sessionStorage:", stateStr); // Debugging log
   
       if (!stateStr) {
         setStatus("Missing authentication data");
+        console.log("Authentication failed: authData not found."); // Debugging log
         return;
       }
   
-      const state = JSON.parse(stateStr);
+      // Parse the authentication data
+      let state;
+      try {
+        state = JSON.parse(stateStr);
+      } catch (error) {
+        console.error("Error parsing authData:", error);
+        setStatus("Invalid authentication data format.");
+        return;
+      }
   
-      const token = state.token;
-      const refreshToken = state.refreshToken;
-      const userData = state.userData;
+      const { token, refreshToken, userData } = state;
   
       if (!token || !refreshToken || !userData) {
         setStatus("Invalid authentication data");
+        console.log("Invalid authentication details found:", state); // Debugging log
         return;
       }
   
-      const role = userData.role || "SELLER";
+      const role = userData.role || "SELLER"; // Default role to SELLER if not provided
   
-      // Store the credentials safely in cookies
+      console.log(`User Role Identified: ${role}`); // Debugging log
+  
+      // Store tokens in cookies
       Cookies.set("accessToken", token, { expires: 1 / 24, secure: true, sameSite: "lax" });
       Cookies.set("refreshToken", refreshToken, { expires: 1, secure: true, sameSite: "lax" });
   
@@ -47,16 +59,27 @@ function AuthHandler() {
   
       Cookies.set("role", role, { expires: 1, secure: true, sameSite: "lax" });
   
-      setStatus("Authentication successful! Redirecting...");
-      setTimeout(() => router.push("/dashboard"), 1000);
+      console.log("Cookies set successfully:", Cookies.get()); // Debugging log
   
-      // Clean up sessionStorage after login
-      sessionStorage.removeItem("authData");
+      setStatus("Authentication successful! Redirecting...");
+  
+      setTimeout(() => {
+        console.log("Navigating to /dashboard..."); // Debugging log
+        router.push("/dashboard");
+      }, 1000);
+  
+      // Clean up sessionStorage after redirect
+      setTimeout(() => {
+        sessionStorage.removeItem("authData");
+        console.log("Session storage cleared after authentication."); // Debugging log
+      }, 3000);
+  
     } catch (error) {
       console.error("Authentication error:", error);
       setStatus("Authentication failed. Please try logging in again.");
     }
-  }, [router]);// Remove searchParams dependency
+  }, [router]);
+  // Remove searchParams dependency
 
   return (
     <div className="flex h-screen flex-col items-center justify-center bg-gray-50">
