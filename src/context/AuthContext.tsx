@@ -1,4 +1,3 @@
-// src/contexts/AuthContext.tsx
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
@@ -12,7 +11,7 @@ interface UserData {
   walletCreated?: boolean;
   id?: string;
   role?: string;
-  // Add any additional user data fields as required
+  // Additional fields as necessary
 }
 
 interface User {
@@ -96,6 +95,29 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setUser(null);
   };
 
+  // NEW: Check if URL hash contains token data and process it
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.location.hash) {
+      try {
+        const hash = window.location.hash.substring(1); // Remove the '#' symbol
+        const tokenDataJson = atob(hash);
+        const tokenData = JSON.parse(tokenDataJson);
+        if (tokenData.token && tokenData.refreshToken && tokenData.userData) {
+          login({
+            token: tokenData.token,
+            refreshToken: tokenData.refreshToken,
+            role: tokenData.userData.role || 'SELLER',
+            userData: tokenData.userData,
+          });
+          // Remove the hash from the URL
+          window.history.replaceState(null, '', window.location.pathname);
+        }
+      } catch (error) {
+        console.error("Failed to parse authentication data from URL hash", error);
+      }
+    }
+  }, [login]);
+
   return (
     <AuthContext.Provider value={{ user, loading, login, logout, setUser }}>
       {children}
@@ -106,7 +128,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    throw new Error("useAuth must be used within an AuthProvider");
   }
   return context;
 };
