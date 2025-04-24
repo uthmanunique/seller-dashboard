@@ -74,7 +74,7 @@ interface ApiDashboardData {
 }
 
 export default function DashboardOverview() {
-  const [hasPendingReview, setHasPendingReview] = useState<boolean>(false);
+  // Removed hasPendingReview state
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [listings, setListings] = useState<Listing[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -95,25 +95,25 @@ export default function DashboardOverview() {
       window.location.href = getLoginRedirectUrl('seller');
       return;
     }
-  
+
     const sellerId = user.data.id; // Store id after checks
     let retryCount = 0;
     const maxRetries = 3;
-  
+
     const attemptFetch = async () => {
       setIsLoading(true);
       console.log('DashboardOverview fetchData - Starting');
       console.log('DashboardOverview - Seller Data from auth context:', user.data);
-  
+
       try {
         const response = await api.get<ApiDashboardData>(`/seller/dashboard/details/${sellerId}`);
         console.log('DashboardOverview - Dashboard Data from API:', response.data);
-  
+
         const apiData = response.data;
-  
+
         const listingsFromApi: ApiListing[] = apiData.listings || [];
         const transactionsFromApi: ApiTransaction[] = apiData.transactions || [];
-  
+
         const parsedDashboardData: DashboardData = {
           reviewsCount: apiData.reviewsCount || 0,
           activeListingCount: apiData.activeListingCount || 0,
@@ -144,11 +144,11 @@ export default function DashboardOverview() {
             createdAt: tx.createdAt,
           })),
         };
-  
+
         setDashboardData(parsedDashboardData);
         setListings(parsedDashboardData.listings.slice(0, 4));
         setSelectedListing(parsedDashboardData.listings[0] || null);
-        setHasPendingReview(parsedDashboardData.listings.some((l) => l.status === 'Review'));
+        // Removed setHasPendingReview
         console.log('DashboardOverview - Data set successfully');
       } catch (err) {
         console.error('DashboardOverview - Fetch Error:', {
@@ -173,14 +173,13 @@ export default function DashboardOverview() {
             transactions: [],
           });
           setListings([]);
-          setHasPendingReview(false);
         }
       } finally {
         setIsLoading(false);
         console.log('DashboardOverview fetchData - Ended');
       }
     };
-  
+
     attemptFetch();
   }, [authLoading, user]);
 
