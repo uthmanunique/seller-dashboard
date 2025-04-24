@@ -15,16 +15,16 @@ function AuthHandler() {
 
   useEffect(() => {
     try {
-      // Get the encoded state parameter
-      const stateParam = searchParams.get('state');
+      // Get the encoded token parameter (renamed from state)
+      const tokenParam = searchParams.get('token');
       
-      if (!stateParam) {
+      if (!tokenParam) {
         setStatus('Missing authentication data');
         return;
       }
       
-      // Decode the state
-      const stateStr = atob(stateParam);
+      // Decode the token
+      const stateStr = atob(tokenParam);
       const state = JSON.parse(stateStr);
       
       const token = state.token;
@@ -36,7 +36,10 @@ function AuthHandler() {
         return;
       }
   
-      // Set cookies in the seller dashboard domain
+      // Determine role from userData or URL
+      const role = userData.role || 'SELLER'; // Default to SELLER if not specified
+  
+      // Set cookies in the dashboard domain
       Cookies.set('accessToken', token, {
         expires: 1 / 24, // 1 hour
         secure: true,
@@ -49,13 +52,22 @@ function AuthHandler() {
         sameSite: 'lax',
       });
   
-      Cookies.set('sellerData', JSON.stringify(userData), {
-        expires: 1,
-        secure: true,
-        sameSite: 'lax',
-      });
+      // Set role-specific data
+      if (role === 'BUYER') {
+        Cookies.set('buyerData', JSON.stringify(userData), {
+          expires: 1,
+          secure: true,
+          sameSite: 'lax',
+        });
+      } else {
+        Cookies.set('sellerData', JSON.stringify(userData), {
+          expires: 1,
+          secure: true,
+          sameSite: 'lax',
+        });
+      }
   
-      Cookies.set('role', 'SELLER', {
+      Cookies.set('role', role, {
         expires: 1,
         secure: true,
         sameSite: 'lax',
@@ -74,14 +86,23 @@ function AuthHandler() {
   }, [router, searchParams]);
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100">
-      <div className="bg-white p-8 rounded-lg shadow-md text-center">
-        <Image src="/logo.png" alt="Rebrivo Logo" width={150} height={45} className="mx-auto mb-6" />
-        <div className="animate-pulse mb-4">
-          <div className="h-4 w-4 bg-[#F26E52] rounded-full mx-auto"></div>
+    <div className="flex h-screen flex-col items-center justify-center bg-gray-50">
+      <div className="w-full max-w-md rounded-xl bg-white p-8 shadow-lg">
+        <div className="flex flex-col items-center justify-center">
+          <Image 
+            src="/logo.png" 
+            alt="Logo" 
+            width={120} 
+            height={120} 
+            className="mb-6"
+          />
+          <h1 className="mb-4 text-2xl font-bold text-[#011631]">
+            Authenticating...
+          </h1>
+          <p className="text-center text-gray-600">
+            {status}
+          </p>
         </div>
-        <h2 className="text-xl font-semibold text-[#011631] mb-2">Authenticating...</h2>
-        <p className="text-sm text-gray-600">{status}</p>
       </div>
     </div>
   );
@@ -89,20 +110,20 @@ function AuthHandler() {
 
 export default function AuthPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100">
-          <div className="bg-white p-8 rounded-lg shadow-md text-center">
-            <Image src="/logo.png" alt="Rebrivo Logo" width={150} height={45} className="mx-auto mb-6" />
-            <div className="animate-pulse mb-4">
-              <div className="h-4 w-4 bg-[#F26E52] rounded-full mx-auto"></div>
-            </div>
-            <h2 className="text-xl font-semibold text-[#011631] mb-2">Loading...</h2>
-            <p className="text-sm text-gray-600">Processing authentication...</p>
+    <Suspense fallback={
+      <div className="flex h-screen flex-col items-center justify-center bg-gray-50">
+        <div className="w-full max-w-md rounded-xl bg-white p-8 shadow-lg">
+          <div className="flex flex-col items-center justify-center">
+            <h1 className="mb-4 text-2xl font-bold text-[#011631]">
+              Loading...
+            </h1>
+            <p className="text-center text-gray-600">
+              Processing authentication...
+            </p>
           </div>
         </div>
-      }
-    >
+      </div>
+    }>
       <AuthHandler />
     </Suspense>
   );
