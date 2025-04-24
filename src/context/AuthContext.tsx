@@ -1,21 +1,31 @@
 // src/contexts/AuthContext.tsx
-
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import Cookies from 'js-cookie';
 
+interface UserData {
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  profilePicture?: string;
+  walletCreated?: boolean;
+  id?: string;
+  role?: string;
+  // Add any additional user data fields as required
+}
+
 interface User {
   token: string;
   refreshToken: string;
   role: string;
-  data: any; // Customize this type as needed
+  data: UserData | null;
 }
 
 interface AuthContextProps {
   user: User | null;
   loading: boolean;
-  login: (params: { token: string; refreshToken: string; role: string; userData: any }) => void;
+  login: (params: { token: string; refreshToken: string; role: string; userData: UserData }) => void;
   logout: () => void;
   setUser: React.Dispatch<React.SetStateAction<User | null>>;
 }
@@ -32,12 +42,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const refreshToken = Cookies.get('refreshToken');
     const role = Cookies.get('role');
 
-    let userData = null;
+    let userData: UserData | null = null;
     if (role === 'SELLER') {
       const sellerData = Cookies.get('sellerData');
       if (sellerData) {
         try {
-          userData = JSON.parse(sellerData);
+          userData = JSON.parse(sellerData) as UserData;
         } catch (err) {
           console.error('Error parsing sellerData', err);
         }
@@ -46,7 +56,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const buyerData = Cookies.get('buyerData');
       if (buyerData) {
         try {
-          userData = JSON.parse(buyerData);
+          userData = JSON.parse(buyerData) as UserData;
         } catch (err) {
           console.error('Error parsing buyerData', err);
         }
@@ -64,7 +74,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   // Login: set cookies and update context state
-  const login = ({ token, refreshToken, role, userData }: { token: string; refreshToken: string; role: string; userData: any }) => {
+  const login = ({ token, refreshToken, role, userData }: { token: string; refreshToken: string; role: string; userData: UserData }) => {
     Cookies.set('accessToken', token, { expires: 1 / 24, secure: true, sameSite: 'lax' });
     Cookies.set('refreshToken', refreshToken, { expires: 1, secure: true, sameSite: 'lax' });
     Cookies.set('role', role, { expires: 1, secure: true, sameSite: 'lax' });
