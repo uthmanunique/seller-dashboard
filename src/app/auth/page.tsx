@@ -14,76 +14,74 @@ function AuthHandler() {
 
   useEffect(() => {
     try {
-      // Get the hash fragment (without the # symbol)
-      const hashFragment = window.location.hash.substring(1);
+      // Retrieve auth data from sessionStorage
+      const authDataStr = sessionStorage.getItem("authData");
       
-      if (!hashFragment) {
-        setStatus('Missing authentication data');
+      if (!authDataStr) {
+        setStatus("Missing authentication data");
         return;
       }
-      
-      // Decode the token from hash fragment
-      const stateStr = atob(hashFragment);
-      const state = JSON.parse(stateStr);
-      
+  
+      // Parse the stored data
+      const state = JSON.parse(authDataStr);
       const token = state.token;
       const refreshToken = state.refreshToken;
       const userData = state.userData;
-      
+  
       if (!token || !refreshToken || !userData) {
-        setStatus('Invalid authentication data');
+        setStatus("Invalid authentication data");
         return;
       }
   
-      // Determine role from userData or URL
-      const role = userData.role || 'SELLER'; // Default to SELLER if not specified
+      // Determine role from userData or default to SELLER
+      const role = userData.role || "SELLER";
   
       // Set cookies in the dashboard domain
-      Cookies.set('accessToken', token, {
+      Cookies.set("accessToken", token, {
         expires: 1 / 24, // 1 hour
         secure: true,
-        sameSite: 'lax',
+        sameSite: "lax",
       });
   
-      Cookies.set('refreshToken', refreshToken, {
+      Cookies.set("refreshToken", refreshToken, {
         expires: 1, // 1 day
         secure: true,
-        sameSite: 'lax',
+        sameSite: "lax",
       });
   
       // Set role-specific data
-      if (role === 'BUYER') {
-        Cookies.set('buyerData', JSON.stringify(userData), {
+      if (role === "BUYER") {
+        Cookies.set("buyerData", JSON.stringify(userData), {
           expires: 1,
           secure: true,
-          sameSite: 'lax',
+          sameSite: "lax",
         });
       } else {
-        Cookies.set('sellerData', JSON.stringify(userData), {
+        Cookies.set("sellerData", JSON.stringify(userData), {
           expires: 1,
           secure: true,
-          sameSite: 'lax',
+          sameSite: "lax",
         });
       }
   
-      Cookies.set('role', role, {
+      Cookies.set("role", role, {
         expires: 1,
         secure: true,
-        sameSite: 'lax',
+        sameSite: "lax",
       });
   
-      // Clean the URL (remove sensitive data from browser history)
-      window.history.replaceState({}, document.title, '/auth');
+      // Clean up sessionStorage to prevent reuse
+      sessionStorage.removeItem("authData");
   
       // Redirect to dashboard
-      setStatus('Authentication successful! Redirecting...');
-      setTimeout(() => router.push('/dashboard'), 1000);
+      setStatus("Authentication successful! Redirecting...");
+      setTimeout(() => router.push("/dashboard"), 1000);
     } catch (error) {
-      console.error('Authentication error:', error);
-      setStatus('Authentication failed. Please try logging in again.');
+      console.error("Authentication error:", error);
+      setStatus("Authentication failed. Please try logging in again.");
     }
-  }, [router]); // Remove searchParams dependency
-
+  }, [router]);
+  
   return (
     <div className="flex h-screen flex-col items-center justify-center bg-gray-50">
       <div className="w-full max-w-md rounded-xl bg-white p-8 shadow-lg">
