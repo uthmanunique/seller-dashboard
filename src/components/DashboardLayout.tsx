@@ -77,7 +77,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       }
       return;
     }
-
+  
     // Skip loading data for auth pages
     if (pathname === '/auth' || pathname.includes('/login') || pathname === '/') {
       if (process.env.NODE_ENV !== 'production') {
@@ -86,12 +86,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       setIsLoading(false);
       return;
     }
-
+  
     setIsLoading(true);
     if (process.env.NODE_ENV !== 'production') {
       console.log('DashboardLayout loadUserData - Starting');
     }
-
+  
     const sellerData = authUser.data;
     if (!sellerData) {
       if (process.env.NODE_ENV !== 'production') {
@@ -101,7 +101,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       setIsLoading(false);
       return;
     }
-
+  
     try {
       // Set basic user info from auth context data
       setUserProfile({
@@ -109,17 +109,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         role: sellerData.role || 'SELLER',
         profilePicture: sellerData.profilePicture || '/profile.png',
       });
-
+  
       setIsWalletActivated(sellerData.walletCreated || false);
-
+  
       // Fetch additional data in parallel
       const [walletResponse, notificationsResponse] = await Promise.all([
         api.get(`/wallets/fetch-info?userType=SELLER&userId=${sellerData.id}`),
         api.get(`/notifications/all/${sellerData.id}`),
       ]);
-
+  
       setWalletBalance(walletResponse.data.wallet.balance || 0);
-
+  
       const fetchedNotifications = notificationsResponse.data.notifications || [];
       setNotifications(fetchedNotifications);
       setUnreadNotifications(fetchedNotifications.length);
@@ -129,11 +129,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       }
       const axiosError = error as AxiosError;
       if (axiosError.response?.status === 401) {
-        console.warn('401 Unauthorized - Waiting for token update from successful response');
-        // Do not redirect; allow app to continue
-        setWalletBalance(0);
-        setUnreadNotifications(0);
-        setNotifications([]);
+        console.warn('401 Unauthorized - Retrying after 2 seconds');
+        setTimeout(() => loadUserData(), 2000); // Retry after 2 seconds
       } else if (axiosError.response?.status === 403) {
         router.replace(loginUrl);
       } else {
