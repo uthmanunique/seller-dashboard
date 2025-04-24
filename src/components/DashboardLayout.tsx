@@ -5,13 +5,13 @@ import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import Image from 'next/image';
 import { createPortal } from 'react-dom';
-import Cookies from 'js-cookie';
-import Wallet from './Wallet';
-import CreateWalletOverlay from './CreateWalletOverlay';
-import WithdrawFundsOverlay from './WithdrawFundsOverlay';
-import api, { setupTokenRefresh, validateAuth } from '../lib/api';
+import api, { setupTokenRefresh } from '../lib/api';
 import { getLoginRedirectUrl } from '../config/env';
 import { AxiosError } from 'axios';
+import { useAuth } from '../context/AuthContext';
+import CreateWalletOverlay from './CreateWalletOverlay';
+import WithdrawFundsOverlay from './WithdrawFundsOverlay';
+import Wallet from './Wallet';
 
 interface UserProfile {
   name: string;
@@ -40,7 +40,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [walletBalance, setWalletBalance] = useState<number>(0);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [authChecked, setAuthChecked] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   const [unreadNotifications, setUnreadNotifications] = useState<number>(0);
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -51,34 +50,34 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const pathname = usePathname();
   const loginUrl = getLoginRedirectUrl('seller');
 
+  const { user: authUser, logout: authLogout } = useAuth();
+
   useEffect(() => {
     if (process.env.NODE_ENV !== 'production') {
       console.log('DashboardLayout - Mounting component');
     }
     setIsMounted(true);
+  }, []);
 
-    // Check authentication immediately
-    const isAuth = validateAuth();
-    setAuthChecked(true);
-
-    if (!isAuth && !pathname.includes('/auth')) {
-      if (process.env.NODE_ENV !== 'production') {
-        console.log('DashboardLayout - No valid auth, redirecting to login');
+  useEffect(() => {
+    if (isMounted) {
+      if (!authUser && !pathname.includes('/auth')) {
+        if (process.env.NODE_ENV !== 'production') {
+          console.log('DashboardLayout - No valid auth in context, redirecting to login');
+        }
+        router.replace(loginUrl);
+        return;
       }
-      router.replace(loginUrl);
-      return;
+      if (authUser) {
+        setupTokenRefresh();
+      }
     }
-
-    // Only set up token refresh if we're authenticated
-    if (isAuth) {
-      setupTokenRefresh();
-    }
-  }, [loginUrl, pathname, router]);
+  }, [authUser, pathname, isMounted, loginUrl, router]);
 
   const loadUserData = useCallback(async () => {
-    if (!isMounted || !authChecked) {
+    if (!isMounted || !authUser) {
       if (process.env.NODE_ENV !== 'production') {
-        console.log('DashboardLayout - Not mounted yet or auth not checked, skipping loadUserData');
+        console.log('DashboardLayout - Not mounted or no auth user, skipping loadUserData');
       }
       return;
     }
@@ -97,12 +96,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       console.log('DashboardLayout loadUserData - Starting');
     }
 
-    const accessToken = Cookies.get('accessToken');
-    const sellerDataString = Cookies.get('sellerData');
-
-    if (!accessToken || !sellerDataString) {
+    const sellerData = authUser.data;
+    if (!sellerData) {
       if (process.env.NODE_ENV !== 'production') {
-        console.log('DashboardLayout - Missing required data, redirecting to login');
+        console.log('DashboardLayout - Missing seller data in auth context, redirecting to login');
       }
       router.replace(loginUrl);
       setIsLoading(false);
@@ -110,9 +107,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
 
     try {
-      const sellerData = JSON.parse(sellerDataString);
-
-      // Set basic user info immediately from cookies to improve perceived performance
+      // Set basic user info from auth context data
       setUserProfile({
         name: `${sellerData.firstName || ''} ${sellerData.lastName || ''}`.trim() || sellerData.email || 'User',
         role: sellerData.role || 'SELLER',
@@ -127,7 +122,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         api.get(`/notifications/all/${sellerData.id}`),
       ]);
 
-      // Update state with fetched data
       setWalletBalance(walletResponse.data.wallet.balance || 0);
 
       const fetchedNotifications = notificationsResponse.data.notifications || [];
@@ -135,15 +129,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       setUnreadNotifications(fetchedNotifications.length);
     } catch (error) {
       if (process.env.NODE_ENV !== 'production') {
-        console.error(`DashboardLayout - Error fetching data:`, error);
+        console.error('DashboardLayout - Error fetching data:', error);
       }
-
-      // Determine if error is auth-related or just a data fetch issue
       const axiosError = error as AxiosError;
       if (axiosError.response?.status === 401 || axiosError.response?.status === 403) {
         router.replace(loginUrl);
       } else {
-        // For non-auth errors, just use defaults and let the user continue
         setWalletBalance(0);
         setUnreadNotifications(0);
         setNotifications([]);
@@ -154,12 +145,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         console.log('DashboardLayout loadUserData - Ended');
       }
     }
-  }, [isMounted, authChecked, pathname, loginUrl, router]);
+  }, [isMounted, authUser, pathname, loginUrl, router]);
 
   useEffect(() => {
-    if (!isMounted || !authChecked) return;
+    if (!isMounted || !authUser) return;
     loadUserData();
-  }, [isMounted, authChecked, loadUserData]);
+  }, [isMounted, authUser, loadUserData]);
 
   useEffect(() => {
     if (!isWalletActivated) {
@@ -171,21 +162,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     if (process.env.NODE_ENV !== 'production') {
       console.log('DashboardLayout - Logging out');
     }
-    Cookies.remove('accessToken', { path: '/' });
-    Cookies.remove('refreshToken', { path: '/' });
-    Cookies.remove('sellerData', { path: '/' });
-    Cookies.remove('role', { path: '/' });
-  
-    // Extract base URL and role to ensure we get the correct format
-    const url = new URL(loginUrl);
-    const role = url.searchParams.get('role') || 'seller';
-    
-    // Create a clean URL with just the role parameter
-    const cleanLoginUrl = `${url.origin}${url.pathname}?role=${role}`;
-    
-    router.replace(cleanLoginUrl);
-  }, [loginUrl, router]);
-
+    authLogout();
+    router.replace(loginUrl);
+  }, [authLogout, loginUrl, router]);
 
   const toggleTheme = () => setIsDarkMode(!isDarkMode);
   const handleOpenWalletOverlay = () => setIsWalletOverlayOpen(true);
@@ -210,24 +189,25 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     { name: 'Contact', path: '/dashboard/contact', icon: '/contact.png' },
   ];
 
-  const walletOverlay = isMounted && document.getElementById('overlay-root') ? (
-    createPortal(
-      <>
-        <CreateWalletOverlay
-          isOpen={isWalletOverlayOpen}
-          onClose={() => setIsWalletOverlayOpen(false)}
-          onWalletCreated={handleWalletCreated}
-        />
-        <WithdrawFundsOverlay
-          isOpen={isWithdrawOpen}
-          onClose={() => setIsWithdrawOpen(false)}
-          onWithdrawSuccess={handleWithdrawSuccess}
-          availableBalance={walletBalance}
-        />
-      </>,
-      document.getElementById('overlay-root')!
-    )
-  ) : null;
+  const walletOverlay =
+    isMounted && document.getElementById('overlay-root') ? (
+      createPortal(
+        <>
+          <CreateWalletOverlay
+            isOpen={isWalletOverlayOpen}
+            onClose={() => setIsWalletOverlayOpen(false)}
+            onWalletCreated={handleWalletCreated}
+          />
+          <WithdrawFundsOverlay
+            isOpen={isWithdrawOpen}
+            onClose={() => setIsWithdrawOpen(false)}
+            onWithdrawSuccess={handleWithdrawSuccess}
+            availableBalance={walletBalance}
+          />
+        </>,
+        document.getElementById('overlay-root')!
+      )
+    ) : null;
 
   if (isLoading || !isMounted) {
     if (process.env.NODE_ENV !== 'production') {
@@ -243,6 +223,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   if (process.env.NODE_ENV !== 'production') {
     console.log(`DashboardLayout - Rendering main layout, userProfile: ${JSON.stringify(userProfile)}`);
   }
+
 
   return (
     <div className="flex flex-col min-h-screen">
