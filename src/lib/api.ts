@@ -1,53 +1,21 @@
-import axios, {
-  AxiosError,
-  AxiosResponse,
-  AxiosRequestConfig,
-  InternalAxiosRequestConfig,
-} from 'axios';
+import axios from 'axios';
 import Cookies from 'js-cookie';
 import { config, getLoginRedirectUrl } from '../config/env';
 
-// Define a custom interface for Axios request config with _retry
-interface CustomAxiosRequestConfig extends InternalAxiosRequestConfig {
-  _retry?: boolean;
+interface Credentials {
+  email: string;
+  password: string;
 }
 
-interface FailedQueueItem {
-  resolve: (value: string | null) => void;
-  reject: (reason: AxiosError) => void;
-}
-
-// Create axios instance
+// Create Axios instance
 const api = axios.create({
   baseURL: config.API_BASE_URL(),
   headers: { 'Content-Type': 'application/json' },
-  withCredentials: true, // Important for CORS with credentials
+  withCredentials: true, // For CORS with credentials
 });
 
-// Manage concurrent 401 handling
-let isHandling401 = false;
-let failedQueue: FailedQueueItem[] = [];
-
-const processQueue = (error: AxiosError | null, token: string | null = null) => {
-  failedQueue.forEach(({ resolve, reject }) => {
-    if (error) {
-      reject(error);
-    } else {
-      resolve(token);
-    }
-  });
-  failedQueue = [];
-};
-
-// Check if we have valid auth data
-const hasValidAuth = () => {
-  const accessToken = Cookies.get('accessToken');
-  const sellerData = Cookies.get('sellerData');
-  return !!accessToken && !!sellerData;
-};
-
 // Attach access token to every request
-api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
+api.interceptors.request.use((config) => {
   const accessToken = Cookies.get('accessToken');
   if (accessToken) {
     config.headers['Authorization'] = `Bearer ${accessToken}`;
@@ -57,180 +25,85 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   return config;
 });
 
-// Handle all responses and errors
+// Update tokens from response headers for successful responses
 api.interceptors.response.use(
   (response) => {
-    // Update tokens from headers for successful responses
-    updateTokensFromHeaders(response);
-    return response;
-  },
-  async (error: unknown) => {
-    const axiosError = error as AxiosError;
-    const originalRequest = axiosError.config as CustomAxiosRequestConfig | undefined;
+    const newAccessToken = response.headers['x-access-token'] || response.data?.accessToken;
+    const newRefreshToken = response.headers['x-refresh-token'] || response.data?.refreshToken;
 
-    // Update tokens from headers for error responses
-    if (axiosError.response) {
-      updateTokensFromHeaders(axiosError.response);
-    }
-
-    // Handle 401 Unauthorized errors (token expired)
-    if (axiosError.response?.status === 401 && !originalRequest?._retry) {
-      if (originalRequest) {
-        originalRequest._retry = true;
-      }
-
-      if (isHandling401) {
-        // Queue the request while refreshing token
-        return new Promise<string | null>((resolve, reject) => {
-          failedQueue.push({ resolve, reject });
-        })
-          .then((token) => {
-            if (originalRequest && token) {
-              originalRequest.headers['Authorization'] = `Bearer ${token}`;
-              return api(originalRequest as AxiosRequestConfig);
-            } else {
-              return Promise.reject('Original request or token is undefined');
-            }
-          })
-          .catch((err) => Promise.reject(err));
-      }
-
-      isHandling401 = true;
-
-      // Try to get a new token using refreshToken, if available
-      const refreshToken = Cookies.get('refreshToken');
-      const sellerDataStr = Cookies.get('sellerData');
-
-      if (!refreshToken || !sellerDataStr) {
-        console.warn('401: Missing refresh token or seller data, redirecting to login');
-        isHandling401 = false;
-        clearCookiesAndRedirect();
-        return Promise.reject(axiosError);
-      }
-
-      try {
-        // Try to refresh the token
-        const response = await axios.post(
-          `${config.API_BASE_URL()}/auth/refresh-token`,
-          { refreshToken },
-          { headers: { 'Content-Type': 'application/json' } }
-        );
-
-        if (response.status === 200 && response.data.accessToken) {
-          const newToken = response.data.accessToken;
-          // Store the new token
-          Cookies.set('accessToken', newToken, {
-            expires: 1 / 24, // 1 hour
-            secure: true,
-            sameSite: 'lax',
-          });
-
-          if (response.data.refreshToken) {
-            Cookies.set('refreshToken', response.data.refreshToken, {
-              expires: 1, // 1 day
-              secure: true,
-              sameSite: 'lax',
-            });
-          }
-
-          // Process queue and retry request
-          if (originalRequest) {
-            originalRequest.headers['Authorization'] = `Bearer ${newToken}`;
-          }
-
-          processQueue(null, newToken);
-          isHandling401 = false;
-
-          if (originalRequest) {
-            return api(originalRequest as AxiosRequestConfig);
-          }
-        } else {
-          throw new Error('Failed to refresh token');
-        }
-      } catch {
-        processQueue(axiosError);
-        isHandling401 = false;
-        clearCookiesAndRedirect();
-        return Promise.reject(axiosError);
-      }
-    }
-
-    return Promise.reject(axiosError);
-  }
-);
-
-// Helper to update tokens from response headers
-const updateTokensFromHeaders = (response: AxiosResponse) => {
-  const newAccessToken = response.headers['x-access-token'] as string | undefined;
-  const newRefreshToken = response.headers['x-refresh-token'] as string | undefined;
-
-  if (newAccessToken) {
-    Cookies.set('accessToken', newAccessToken, {
-      expires: 1 / 24, // 1 hour
-      secure: true,
-      sameSite: 'lax',
-    });
-
-    if (newRefreshToken) {
-      Cookies.set('refreshToken', newRefreshToken, {
-        expires: 1, // 1 day
+    if (newAccessToken) {
+      Cookies.set('accessToken', newAccessToken, {
+        expires: 1 / 24, // 1 hour
         secure: true,
         sameSite: 'lax',
       });
     }
+    if (newRefreshToken) {
+      Cookies.set('refreshToken', newRefreshToken, {
+        expires: 7, // 7 days
+        secure: true,
+        sameSite: 'lax',
+      });
+    }
+    return response;
+  },
+  (error) => {
+    if (error.response?.status === 401) {
+      console.warn('401 Unauthorized - Waiting for next successful response to update tokens');
+      // Do not log out; wait for token update
+    }
+    return Promise.reject(error);
+  }
+);
+
+// Handle login and store initial tokens from response body
+export const handleLogin = async (credentials: Credentials) => {
+  try {
+    const response = await api.post('/auth/login', credentials);
+    const { accessToken, refreshToken, seller } = response.data;
+
+    if (accessToken && refreshToken) {
+      Cookies.set('accessToken', accessToken, {
+        expires: 1 / 24, // 1 hour
+        secure: true,
+        sameSite: 'lax',
+      });
+      Cookies.set('refreshToken', refreshToken, {
+        expires: 7, // 7 days
+        secure: true,
+        sameSite: 'lax',
+      });
+      Cookies.set('sellerData', JSON.stringify(seller), {
+        expires: 7,
+        secure: true,
+        sameSite: 'lax',
+      });
+    }
+    return response;
+  } catch (error) {
+    console.error('Login failed:', error);
+    throw error;
   }
 };
 
-// Helper to clear cookies and redirect
+// Check if we have valid auth data
+const hasValidAuth = () => {
+  const accessToken = Cookies.get('accessToken');
+  const sellerData = Cookies.get('sellerData');
+  return !!accessToken && !!sellerData;
+};
+
+// Helper to clear cookies and redirect (only use when explicitly needed, not on 401)
 const clearCookiesAndRedirect = () => {
   console.log('Clearing cookies and redirecting to login');
   Cookies.remove('accessToken');
   Cookies.remove('refreshToken');
   Cookies.remove('sellerData');
-  Cookies.remove('role');
-
-  // Add timestamp to prevent caching
   const timestamp = new Date().getTime();
   window.location.href = `${getLoginRedirectUrl('seller')}?t=${timestamp}`;
 };
 
-// Proactive token refresh
-export const setupTokenRefresh = () => {
-  const refreshInterval = 45 * 60 * 1000; // Every 45 minutes
-
-  // Check authentication immediately
-  if (!hasValidAuth()) {
-    console.warn('setupTokenRefresh: No valid auth found, redirecting to login');
-    clearCookiesAndRedirect();
-    return;
-  }
-
-  setInterval(async () => {
-    const accessToken = Cookies.get('accessToken');
-    const refreshToken = Cookies.get('refreshToken');
-    const sellerDataStr = Cookies.get('sellerData');
-
-    if (accessToken && refreshToken && sellerDataStr) {
-      try {
-        const userId = JSON.parse(sellerDataStr).id;
-        // Make a request to keep session alive
-        await api.get('/wallets/fetch-info', {
-          params: {
-            userType: 'SELLER',
-            userId,
-          },
-        });
-      } catch {
-        clearCookiesAndRedirect();
-      }
-    } else {
-      console.warn('Proactive refresh skipped: Missing tokens or seller data');
-      clearCookiesAndRedirect();
-    }
-  }, refreshInterval);
-};
-
-// Check auth on initial load
+// Validate auth on initial load
 export const validateAuth = () => {
   if (!hasValidAuth()) {
     console.warn('validateAuth: No valid auth found');

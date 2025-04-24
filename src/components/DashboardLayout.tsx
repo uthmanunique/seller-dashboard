@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import Image from 'next/image';
 import { createPortal } from 'react-dom';
-import api, { setupTokenRefresh } from '../lib/api';
+import api from '../lib/api';
 import { getLoginRedirectUrl } from '../config/env';
 import { AxiosError } from 'axios';
 import { useAuth } from '../context/AuthContext';
@@ -66,10 +66,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           console.log('DashboardLayout - No valid auth in context, redirecting to login');
         }
         router.replace(loginUrl);
-        return;
-      }
-      if (authUser) {
-        setupTokenRefresh();
       }
     }
   }, [authUser, pathname, isMounted, loginUrl, router]);
@@ -132,7 +128,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         console.error('DashboardLayout - Error fetching data:', error);
       }
       const axiosError = error as AxiosError;
-      if (axiosError.response?.status === 401 || axiosError.response?.status === 403) {
+      if (axiosError.response?.status === 401) {
+        console.warn('401 Unauthorized - Waiting for token update from successful response');
+        // Do not redirect; allow app to continue
+        setWalletBalance(0);
+        setUnreadNotifications(0);
+        setNotifications([]);
+      } else if (axiosError.response?.status === 403) {
         router.replace(loginUrl);
       } else {
         setWalletBalance(0);
@@ -223,7 +225,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   if (process.env.NODE_ENV !== 'production') {
     console.log(`DashboardLayout - Rendering main layout, userProfile: ${JSON.stringify(userProfile)}`);
   }
-
 
   return (
     <div className="flex flex-col min-h-screen">
