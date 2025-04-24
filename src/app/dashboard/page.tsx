@@ -1,11 +1,13 @@
-"use client";
+'use client';
 
-import Image from "next/image";
-import Link from "next/link";
-import { useState, useEffect, useCallback } from "react";
-import api from "../../lib/api"; // central API instance
-import { getLoginRedirectUrl } from "../../config/env"; // centralized login URL
-import { useAuth } from "@/src/context/AuthContext";
+import Image from 'next/image';
+import Link from 'next/link';
+import { useState, useEffect, useCallback } from 'react';
+import api from '../../lib/api';
+import { getLoginRedirectUrl } from '../../config/env';
+import { useAuth } from '@/src/context/AuthContext';
+import { AxiosError } from 'axios';
+
 // Type definitions for listings, transactions, and dashboard data
 interface Listing {
   id: string;
@@ -27,7 +29,7 @@ interface Transaction {
   businessName?: string;
   amount: string;
   status: string;
-  type?: "credit" | "debit";
+  type?: 'credit' | 'debit';
   description?: string;
   createdAt: string;
 }
@@ -81,112 +83,110 @@ export default function DashboardOverview() {
   const [isTrackOverlayOpen, setIsTrackOverlayOpen] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
 
-  // Use auth context instead of cookies directly
   const { user, loading: authLoading } = useAuth();
 
   const fetchData = useCallback(async () => {
     if (authLoading) {
+      console.log('DashboardOverview - Auth still loading, skipping fetchData');
       return;
     }
     if (!user || !user.data || !user.data.id) {
-      console.log("DashboardOverview - No authenticated user, redirecting to login");
-      window.location.href = getLoginRedirectUrl("seller");
+      console.log('DashboardOverview - No authenticated user, redirecting to login');
+      window.location.href = getLoginRedirectUrl('seller');
       return;
     }
-
-    setIsLoading(true);
-    console.log("DashboardOverview fetchData - Starting");
-
-    const sellerData = user.data;
-    try {
-      console.log("DashboardOverview - Seller Data from auth context:", sellerData);
-      const response = await api.get<ApiDashboardData>(`/seller/dashboard/details/${sellerData.id}`);
-      console.log("DashboardOverview - Dashboard Data from API:", response.data);
-
-      const apiData = response.data;
-
-      // Safely default listings and transactions if undefined
-      const listingsFromApi: ApiListing[] = apiData.listings || [];
-      const transactionsFromApi: ApiTransaction[] = apiData.transactions || [];
-
-      const parsedDashboardData: DashboardData = {
-        reviewsCount: apiData.reviewsCount || 0,
-        activeListingCount: apiData.activeListingCount || 0,
-        soldListingCount: apiData.soldListingCount || 0,
-        totalRevenue: apiData.totalRevenue || 0,
-        listings: listingsFromApi.map((listing) => ({
-          id: listing.id,
-          name: listing.businessName,
-          value: `₦${listing.price.toLocaleString()}`,
-          category: listing.businessCategoryType,
-          location: listing.location,
-          status: listing.status === "PENDING" ? "Review" : listing.status,
-          views: 0, // Default value if API does not return this data
-          inquiries: listing.listOfBuyerRequestingService?.length || 0,
-          images: (listing.businessImagesUrls && listing.businessImagesUrls.length)
-            ? listing.businessImagesUrls
-            : ["/sample-image.jpg"],
-          createdAt: listing.createdAt,
-        })),
-        transactions: transactionsFromApi.map((tx) => ({
-          _id: tx._id,
-          transactionRef: tx.transactionRef,
-          receiver: tx.receiver,
-          // Look-up business name from listings if available
-          businessName:
-            listingsFromApi.find((l) => l.id === tx.receiver.id)?.businessName || "N/A",
-          amount: tx.amount,
-          status: tx.status,
-          createdAt: tx.createdAt,
-        })),
-      };
-
-      setDashboardData(parsedDashboardData);
-      setListings(parsedDashboardData.listings.slice(0, 4));
-      setSelectedListing(parsedDashboardData.listings[0] || null);
-      setHasPendingReview(parsedDashboardData.listings.some((l) => l.status === "Review"));
-      console.log("DashboardOverview - Data set successfully");
-    } catch (err) {
-      console.error("DashboardOverview - Fetch Error:", err);
-      setDashboardData({
-        reviewsCount: 0,
-        activeListingCount: 0,
-        soldListingCount: 0,
-        totalRevenue: 0,
-        listings: [],
-        transactions: [],
-      });
-      setListings([]);
-      console.log("DashboardOverview - Fell back to empty data due to error");
-    } finally {
-      setIsLoading(false);
-      console.log("DashboardOverview fetchData - Ended");
-    }
+  
+    const sellerId = user.data.id; // Store id after checks
+    let retryCount = 0;
+    const maxRetries = 3;
+  
+    const attemptFetch = async () => {
+      setIsLoading(true);
+      console.log('DashboardOverview fetchData - Starting');
+      console.log('DashboardOverview - Seller Data from auth context:', user.data);
+  
+      try {
+        const response = await api.get<ApiDashboardData>(`/seller/dashboard/details/${sellerId}`);
+        console.log('DashboardOverview - Dashboard Data from API:', response.data);
+  
+        const apiData = response.data;
+  
+        const listingsFromApi: ApiListing[] = apiData.listings || [];
+        const transactionsFromApi: ApiTransaction[] = apiData.transactions || [];
+  
+        const parsedDashboardData: DashboardData = {
+          reviewsCount: apiData.reviewsCount || 0,
+          activeListingCount: apiData.activeListingCount || 0,
+          soldListingCount: apiData.soldListingCount || 0,
+          totalRevenue: apiData.totalRevenue || 0,
+          listings: listingsFromApi.map((listing) => ({
+            id: listing.id,
+            name: listing.businessName,
+            value: `₦${listing.price.toLocaleString()}`,
+            category: listing.businessCategoryType,
+            location: listing.location,
+            status: listing.status === 'PENDING' ? 'Review' : listing.status,
+            views: 0,
+            inquiries: listing.listOfBuyerRequestingService?.length || 0,
+            images: listing.businessImagesUrls && listing.businessImagesUrls.length
+              ? listing.businessImagesUrls
+              : ['/sample-image.jpg'],
+            createdAt: listing.createdAt,
+          })),
+          transactions: transactionsFromApi.map((tx) => ({
+            _id: tx._id,
+            transactionRef: tx.transactionRef,
+            receiver: tx.receiver,
+            businessName:
+              listingsFromApi.find((l) => l.id === tx.receiver.id)?.businessName || 'N/A',
+            amount: tx.amount,
+            status: tx.status,
+            createdAt: tx.createdAt,
+          })),
+        };
+  
+        setDashboardData(parsedDashboardData);
+        setListings(parsedDashboardData.listings.slice(0, 4));
+        setSelectedListing(parsedDashboardData.listings[0] || null);
+        setHasPendingReview(parsedDashboardData.listings.some((l) => l.status === 'Review'));
+        console.log('DashboardOverview - Data set successfully');
+      } catch (err) {
+        console.error('DashboardOverview - Fetch Error:', {
+          message: (err as AxiosError).message,
+          code: (err as AxiosError).code,
+          response: (err as AxiosError).response?.data,
+          status: (err as AxiosError).response?.status,
+        });
+        const axiosError = err as AxiosError;
+        if ((axiosError.code === 'ERR_NETWORK' || axiosError.response?.status === 401) && retryCount < maxRetries) {
+          console.warn(`Network Error or 401 - Retry ${retryCount + 1}/${maxRetries} after 2 seconds`);
+          retryCount++;
+          setTimeout(() => attemptFetch(), 2000);
+        } else {
+          console.log('DashboardOverview - Fell back to empty data due to error');
+          setDashboardData({
+            reviewsCount: 0,
+            activeListingCount: 0,
+            soldListingCount: 0,
+            totalRevenue: 0,
+            listings: [],
+            transactions: [],
+          });
+          setListings([]);
+          setHasPendingReview(false);
+        }
+      } finally {
+        setIsLoading(false);
+        console.log('DashboardOverview fetchData - Ended');
+      }
+    };
+  
+    attemptFetch();
   }, [authLoading, user]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
-
-  useEffect(() => {
-    const handleStorageChange = () => {
-      const updatedValue = localStorage.getItem("hasPendingReview") === "true";
-      setHasPendingReview(updatedValue);
-    };
-
-    window.addEventListener("storage", handleStorageChange);
-    const interval = setInterval(() => {
-      const updatedValue = localStorage.getItem("hasPendingReview") === "true";
-      if (updatedValue !== hasPendingReview) {
-        setHasPendingReview(updatedValue);
-      }
-    }, 1000);
-
-    return () => {
-      window.removeEventListener("storage", handleStorageChange);
-      clearInterval(interval);
-    };
-  }, [hasPendingReview]);
 
   const handlePrevImage = () => {
     if (selectedListing) {
@@ -209,37 +209,36 @@ export default function DashboardOverview() {
 
     const { status, _id, amount, createdAt, description } = selectedTransaction;
     const headings = {
-      pending: "Your Payment is Being Processed",
-      success: "Payment Successfully Processed",
-      failed: "Payment Failed – Action Required",
+      pending: 'Your Payment is Being Processed',
+      success: 'Payment Successfully Processed',
+      failed: 'Payment Failed – Action Required',
     };
     const subtexts = {
       pending: "We're verifying your transaction and ensuring a smooth escrow settlement.",
       success:
-        "Your escrow payment has been successfully completed, and the funds have been released to your account.",
+        'Your escrow payment has been successfully completed, and the funds have been released to your account.',
       failed:
-        "There was an issue processing your escrow payment. Please review the details and take necessary action.",
+        'There was an issue processing your escrow payment. Please review the details and take necessary action.',
     };
     const notes = {
-      pending: "Note: Once verification is complete, the funds will be released to your linked account.",
-      success: "Note: The transaction is now complete, and your funds have been deposited.",
-      failed: "Note: Your escrow payment could not be processed due to an issue.",
+      pending: 'Note: Once verification is complete, the funds will be released to your linked account.',
+      success: 'Note: The transaction is now complete, and your funds have been deposited.',
+      failed: 'Note: Your escrow payment could not be processed due to an issue.',
     };
     const dateLabels = {
-      pending: "Estimated Completion",
-      success: "Date Received",
-      failed: "Date Attempted",
+      pending: 'Estimated Completion',
+      success: 'Date Received',
+      failed: 'Date Attempted',
     };
 
     const formatDate = (dateString: string) =>
-      new Date(dateString).toLocaleDateString("en-US", {
-        day: "numeric",
-        month: "short",
-        year: "numeric",
+      new Date(dateString).toLocaleDateString('en-US', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
       });
     const formatAmount = (amount: string) =>
       `₦${parseFloat(amount).toLocaleString()}`;
-
 
     return (
       <div className="fixed inset-0 bg-gradient-to-br from-gray-800/50 to-gray-900/50 flex justify-center items-center z-50">

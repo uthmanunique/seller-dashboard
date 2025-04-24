@@ -14,13 +14,21 @@ const api = axios.create({
   withCredentials: true, // For CORS with credentials
 });
 
-// Attach access token to every request
+// Log API base URL on initialization
+console.log('API Base URL:', config.API_BASE_URL());
+
+// Attach access token to every request and log details
 api.interceptors.request.use((config) => {
   const accessToken = Cookies.get('accessToken');
+  console.log('Request Details:', {
+    url: `${config.baseURL}${config.url}`,
+    method: config.method,
+    headers: { ...config.headers, Authorization: accessToken ? `Bearer ${accessToken}` : 'None' },
+  });
   if (accessToken) {
     config.headers['Authorization'] = `Bearer ${accessToken}`;
   } else {
-    console.log(`No access token for request: ${config.url}`);
+    console.warn(`No access token for request: ${config.url}`);
   }
   return config;
 });
@@ -28,6 +36,11 @@ api.interceptors.request.use((config) => {
 // Update tokens from response headers for successful responses
 api.interceptors.response.use(
   (response) => {
+    console.log('Response Details:', {
+      url: response.config.url,
+      status: response.status,
+      headers: response.headers,
+    });
     const newAccessToken = response.headers['x-access-token'] || response.data?.accessToken;
     const newRefreshToken = response.headers['x-refresh-token'] || response.data?.refreshToken;
 
@@ -48,9 +61,20 @@ api.interceptors.response.use(
     return response;
   },
   (error) => {
-    if (error.response?.status === 401) {
-      console.warn('401 Unauthorized - Waiting for next successful response to update tokens');
-      // Do not log out; wait for token update
+    if (error.response) {
+      console.error('Response Error:', {
+        url: error.config.url,
+        status: error.response.status,
+        data: error.response.data,
+      });
+    } else if (error.code === 'ERR_NETWORK') {
+      console.error('Network Error:', {
+        url: error.config.url,
+        message: error.message,
+        details: 'Check CORS, server availability, or SSL configuration',
+      });
+    } else {
+      console.error('Unknown Error:', error);
     }
     return Promise.reject(error);
   }
