@@ -176,14 +176,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     Cookies.remove('sellerData', { path: '/' });
     Cookies.remove('role', { path: '/' });
   
-    // Use timestamp to prevent caching
-    const timestamp = new Date().getTime();
-    // Use & instead of ? for additional parameters if URL already contains a query parameter
-    const separator = loginUrl.includes('?') ? '&' : '?';
-    router.replace(`${loginUrl}${separator}t=${timestamp}`);
+    // Extract base URL and role to ensure we get the correct format
+    const url = new URL(loginUrl);
+    const role = url.searchParams.get('role') || 'seller';
+    
+    // Create a clean URL with just the role parameter
+    const cleanLoginUrl = `${url.origin}${url.pathname}?role=${role}`;
+    
+    router.replace(cleanLoginUrl);
   }, [loginUrl, router]);
 
-  
+
   const toggleTheme = () => setIsDarkMode(!isDarkMode);
   const handleOpenWalletOverlay = () => setIsWalletOverlayOpen(true);
   const handleWalletCreated = () => {
