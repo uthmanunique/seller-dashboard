@@ -1,5 +1,3 @@
-'use client';
-
 import { useEffect, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Cookies from 'js-cookie';
@@ -15,16 +13,16 @@ function AuthHandler() {
 
   useEffect(() => {
     try {
-      // Get the encoded token parameter (renamed from state)
-      const tokenParam = searchParams.get('token');
+      // Get the hash fragment (without the # symbol)
+      const hashFragment = window.location.hash.substring(1);
       
-      if (!tokenParam) {
+      if (!hashFragment) {
         setStatus('Missing authentication data');
         return;
       }
       
-      // Decode the token
-      const stateStr = atob(tokenParam);
+      // Decode the token from hash fragment
+      const stateStr = atob(hashFragment);
       const state = JSON.parse(stateStr);
       
       const token = state.token;
@@ -74,7 +72,7 @@ function AuthHandler() {
       });
   
       // Clean the URL (remove sensitive data from browser history)
-      window.history.replaceState({}, document.title, '/dashboard');
+      window.history.replaceState({}, document.title, '/auth');
   
       // Redirect to dashboard
       setStatus('Authentication successful! Redirecting...');
