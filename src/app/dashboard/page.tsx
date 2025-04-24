@@ -1,12 +1,13 @@
-'use client';
+"use client";
 
-import Image from 'next/image';
-import Link from 'next/link';
-import { useState, useEffect, useCallback } from 'react';
-import Cookies from 'js-cookie';
-import api from '../../lib/api'; // Import centralized API instance
-import { getLoginRedirectUrl } from '../../config/env'; // Import centralized login URL
+import Image from "next/image";
+import Link from "next/link";
+import { useState, useEffect, useCallback } from "react";
+import api from "../../lib/api"; // central API instance
+import { getLoginRedirectUrl } from "../../config/env"; // centralized login URL
+import { useAuth } from "@/src/context/AuthContext"; // adjust path as needed
 
+// Type definitions for listings, transactions, and dashboard data
 interface Listing {
   id: string;
   name: string;
@@ -27,7 +28,7 @@ interface Transaction {
   businessName?: string;
   amount: string;
   status: string;
-  type?: 'credit' | 'debit';
+  type?: "credit" | "debit";
   description?: string;
   createdAt: string;
 }
@@ -81,30 +82,32 @@ export default function DashboardOverview() {
   const [isTrackOverlayOpen, setIsTrackOverlayOpen] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
 
+  // Use auth context instead of cookies
+  const { user, loading: authLoading } = useAuth();
+
+  // Fetch dashboard data – waits until the auth context has loaded
   const fetchData = useCallback(async () => {
-    setIsLoading(true);
-    console.log('DashboardOverview fetchData - Starting');
-
-    const accessToken = Cookies.get('accessToken');
-    const sellerDataString = Cookies.get('sellerData');
-
-    if (!accessToken || !sellerDataString) {
-      console.log('DashboardOverview - No tokens, redirecting to login');
-      window.location.href = getLoginRedirectUrl('seller'); // Use centralized login URL
+    if (authLoading) {
+      return;
+    }
+    if (!user || !user.data || !user.data.id) {
+      console.log("DashboardOverview - No authenticated user, redirecting to login");
+      window.location.href = getLoginRedirectUrl("seller");
       return;
     }
 
-    try {
-      const sellerData = JSON.parse(sellerDataString);
-      console.log('DashboardOverview - Seller Data from cookies:', sellerData);
+    setIsLoading(true);
+    console.log("DashboardOverview fetchData - Starting");
 
-      const response = await api.get<ApiDashboardData>(
-        `/seller/dashboard/details/${sellerData.id}`
-      ); // Use api instance
-      console.log('DashboardOverview - Dashboard Data from API:', response.data);
+    const sellerData = user.data;
+    try {
+      console.log("DashboardOverview - Seller Data from auth context:", sellerData);
+
+      const response = await api.get<ApiDashboardData>(`/seller/dashboard/details/${sellerData.id}`);
+      console.log("DashboardOverview - Dashboard Data from API:", response.data);
 
       const apiData = response.data;
-      const dashboardData: DashboardData = {
+      const parsedDashboardData: DashboardData = {
         reviewsCount: apiData.reviewsCount || 0,
         activeListingCount: apiData.activeListingCount || 0,
         soldListingCount: apiData.soldListingCount || 0,
@@ -115,30 +118,31 @@ export default function DashboardOverview() {
           value: `₦${listing.price.toLocaleString()}`,
           category: listing.businessCategoryType,
           location: listing.location,
-          status: listing.status === 'PENDING' ? 'Review' : listing.status,
-          views: 0, // Not in API, default to 0
+          status: listing.status === "PENDING" ? "Review" : listing.status,
+          views: 0, // defaults to 0 if not provided
           inquiries: listing.listOfBuyerRequestingService.length || 0,
-          images: listing.businessImagesUrls.length ? listing.businessImagesUrls : ['/sample-image.jpg'],
+          images: listing.businessImagesUrls.length ? listing.businessImagesUrls : ["/sample-image.jpg"],
           createdAt: listing.createdAt,
         })),
         transactions: apiData.transactions.map((tx: ApiTransaction) => ({
           _id: tx._id,
           transactionRef: tx.transactionRef,
           receiver: tx.receiver,
-          businessName: apiData.listings.find((l) => l.id === tx.receiver.id)?.businessName || 'N/A',
+          businessName:
+            apiData.listings.find((l: ApiListing) => l.id === tx.receiver.id)?.businessName || "N/A",
           amount: tx.amount,
           status: tx.status,
           createdAt: tx.createdAt,
         })),
       };
 
-      setDashboardData(dashboardData);
-      setListings(dashboardData.listings.slice(0, 4));
-      setSelectedListing(dashboardData.listings[0] || null);
-      setHasPendingReview(dashboardData.listings.some((l) => l.status === 'Review'));
-      console.log('DashboardOverview - Data set successfully');
+      setDashboardData(parsedDashboardData);
+      setListings(parsedDashboardData.listings.slice(0, 4));
+      setSelectedListing(parsedDashboardData.listings[0] || null);
+      setHasPendingReview(parsedDashboardData.listings.some((l) => l.status === "Review"));
+      console.log("DashboardOverview - Data set successfully");
     } catch (err) {
-      console.error('DashboardOverview - Fetch Error:', err);
+      console.error("DashboardOverview - Fetch Error:", err);
       setDashboardData({
         reviewsCount: 0,
         activeListingCount: 0,
@@ -148,33 +152,34 @@ export default function DashboardOverview() {
         transactions: [],
       });
       setListings([]);
-      console.log('DashboardOverview - Fell back to empty data due to error');
+      console.log("DashboardOverview - Fell back to empty data due to error");
     } finally {
       setIsLoading(false);
-      console.log('DashboardOverview fetchData - Ended');
+      console.log("DashboardOverview fetchData - Ended");
     }
-  }, []);
+  }, [authLoading, user]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
+  // This effect listens for pending review changes (if stored in localStorage elsewhere)
   useEffect(() => {
     const handleStorageChange = () => {
-      const updatedValue = localStorage.getItem('hasPendingReview') === 'true';
+      const updatedValue = localStorage.getItem("hasPendingReview") === "true";
       setHasPendingReview(updatedValue);
     };
 
-    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener("storage", handleStorageChange);
     const interval = setInterval(() => {
-      const updatedValue = localStorage.getItem('hasPendingReview') === 'true';
+      const updatedValue = localStorage.getItem("hasPendingReview") === "true";
       if (updatedValue !== hasPendingReview) {
         setHasPendingReview(updatedValue);
       }
     }, 1000);
 
     return () => {
-      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener("storage", handleStorageChange);
       clearInterval(interval);
     };
   }, [hasPendingReview]);
@@ -195,34 +200,40 @@ export default function DashboardOverview() {
     }
   };
 
+  // Render track overlay – UI specific logic (omitted for brevity)
   const renderTrackOverlay = () => {
     if (!isTrackOverlayOpen || !selectedTransaction) return null;
 
     const { status, _id, amount, createdAt, description } = selectedTransaction;
     const headings = {
-      pending: 'Your Payment is Being Processed',
-      success: 'Payment Successfully Processed',
-      failed: 'Payment Failed – Action Required',
+      pending: "Your Payment is Being Processed",
+      success: "Payment Successfully Processed",
+      failed: "Payment Failed – Action Required",
     };
     const subtexts = {
       pending: "We're verifying your transaction and ensuring a smooth escrow settlement.",
-      success: 'Your escrow payment has been successfully completed, and the funds have been released to your account.',
-      failed: 'There was an issue processing your escrow payment. Please review the details and take necessary action.',
+      success: "Your escrow payment has been successfully completed, and the funds have been released to your account.",
+      failed: "There was an issue processing your escrow payment. Please review the details and take necessary action.",
     };
     const notes = {
-      pending: 'Note: Once verification is complete, the funds will be released to your linked account.',
-      success: 'Note: The transaction is now complete, and your funds have been deposited.',
-      failed: 'Note: Your escrow payment could not be processed due to an issue.',
+      pending: "Note: Once verification is complete, the funds will be released to your linked account.",
+      success: "Note: The transaction is now complete, and your funds have been deposited.",
+      failed: "Note: Your escrow payment could not be processed due to an issue.",
     };
     const dateLabels = {
-      pending: 'Estimated Completion',
-      success: 'Date Received',
-      failed: 'Date Attempted',
+      pending: "Estimated Completion",
+      success: "Date Received",
+      failed: "Date Attempted",
     };
 
     const formatDate = (dateString: string) =>
-      new Date(dateString).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
-    const formatAmount = (amount: string) => `₦${parseFloat(amount).toLocaleString()}`;
+      new Date(dateString).toLocaleDateString("en-US", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      });
+    const formatAmount = (amount: string) =>
+      `₦${parseFloat(amount).toLocaleString()}`;
 
     return (
       <div className="fixed inset-0 bg-gradient-to-br from-gray-800/50 to-gray-900/50 flex justify-center items-center z-50">
