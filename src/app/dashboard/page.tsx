@@ -5,8 +5,7 @@ import Link from "next/link";
 import { useState, useEffect, useCallback } from "react";
 import api from "../../lib/api"; // central API instance
 import { getLoginRedirectUrl } from "../../config/env"; // centralized login URL
-import { useAuth } from "@/src/context/AuthContext"; // adjust path as needed
-
+import { useAuth } from "@/src/context/AuthContext";
 // Type definitions for listings, transactions, and dashboard data
 interface Listing {
   id: string;
@@ -64,12 +63,12 @@ interface ApiTransaction {
 }
 
 interface ApiDashboardData {
-  reviewsCount: number;
-  activeListingCount: number;
-  soldListingCount: number;
-  totalRevenue: number;
-  listings: ApiListing[];
-  transactions: ApiTransaction[];
+  reviewsCount?: number;
+  activeListingCount?: number;
+  soldListingCount?: number;
+  totalRevenue?: number;
+  listings?: ApiListing[];
+  transactions?: ApiTransaction[];
 }
 
 export default function DashboardOverview() {
@@ -82,10 +81,9 @@ export default function DashboardOverview() {
   const [isTrackOverlayOpen, setIsTrackOverlayOpen] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
 
-  // Use auth context instead of cookies
+  // Use auth context instead of cookies directly
   const { user, loading: authLoading } = useAuth();
 
-  // Fetch dashboard data – waits until the auth context has loaded
   const fetchData = useCallback(async () => {
     if (authLoading) {
       return;
@@ -102,34 +100,41 @@ export default function DashboardOverview() {
     const sellerData = user.data;
     try {
       console.log("DashboardOverview - Seller Data from auth context:", sellerData);
-
       const response = await api.get<ApiDashboardData>(`/seller/dashboard/details/${sellerData.id}`);
       console.log("DashboardOverview - Dashboard Data from API:", response.data);
 
       const apiData = response.data;
+
+      // Safely default listings and transactions if undefined
+      const listingsFromApi: ApiListing[] = apiData.listings || [];
+      const transactionsFromApi: ApiTransaction[] = apiData.transactions || [];
+
       const parsedDashboardData: DashboardData = {
         reviewsCount: apiData.reviewsCount || 0,
         activeListingCount: apiData.activeListingCount || 0,
         soldListingCount: apiData.soldListingCount || 0,
         totalRevenue: apiData.totalRevenue || 0,
-        listings: apiData.listings.map((listing: ApiListing) => ({
+        listings: listingsFromApi.map((listing) => ({
           id: listing.id,
           name: listing.businessName,
           value: `₦${listing.price.toLocaleString()}`,
           category: listing.businessCategoryType,
           location: listing.location,
           status: listing.status === "PENDING" ? "Review" : listing.status,
-          views: 0, // defaults to 0 if not provided
-          inquiries: listing.listOfBuyerRequestingService.length || 0,
-          images: listing.businessImagesUrls.length ? listing.businessImagesUrls : ["/sample-image.jpg"],
+          views: 0, // Default value if API does not return this data
+          inquiries: listing.listOfBuyerRequestingService?.length || 0,
+          images: (listing.businessImagesUrls && listing.businessImagesUrls.length)
+            ? listing.businessImagesUrls
+            : ["/sample-image.jpg"],
           createdAt: listing.createdAt,
         })),
-        transactions: apiData.transactions.map((tx: ApiTransaction) => ({
+        transactions: transactionsFromApi.map((tx) => ({
           _id: tx._id,
           transactionRef: tx.transactionRef,
           receiver: tx.receiver,
+          // Look-up business name from listings if available
           businessName:
-            apiData.listings.find((l: ApiListing) => l.id === tx.receiver.id)?.businessName || "N/A",
+            listingsFromApi.find((l) => l.id === tx.receiver.id)?.businessName || "N/A",
           amount: tx.amount,
           status: tx.status,
           createdAt: tx.createdAt,
@@ -163,7 +168,6 @@ export default function DashboardOverview() {
     fetchData();
   }, [fetchData]);
 
-  // This effect listens for pending review changes (if stored in localStorage elsewhere)
   useEffect(() => {
     const handleStorageChange = () => {
       const updatedValue = localStorage.getItem("hasPendingReview") === "true";
@@ -200,7 +204,6 @@ export default function DashboardOverview() {
     }
   };
 
-  // Render track overlay – UI specific logic (omitted for brevity)
   const renderTrackOverlay = () => {
     if (!isTrackOverlayOpen || !selectedTransaction) return null;
 
@@ -212,8 +215,10 @@ export default function DashboardOverview() {
     };
     const subtexts = {
       pending: "We're verifying your transaction and ensuring a smooth escrow settlement.",
-      success: "Your escrow payment has been successfully completed, and the funds have been released to your account.",
-      failed: "There was an issue processing your escrow payment. Please review the details and take necessary action.",
+      success:
+        "Your escrow payment has been successfully completed, and the funds have been released to your account.",
+      failed:
+        "There was an issue processing your escrow payment. Please review the details and take necessary action.",
     };
     const notes = {
       pending: "Note: Once verification is complete, the funds will be released to your linked account.",
@@ -234,6 +239,7 @@ export default function DashboardOverview() {
       });
     const formatAmount = (amount: string) =>
       `₦${parseFloat(amount).toLocaleString()}`;
+
 
     return (
       <div className="fixed inset-0 bg-gradient-to-br from-gray-800/50 to-gray-900/50 flex justify-center items-center z-50">
