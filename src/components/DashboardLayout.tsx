@@ -175,12 +175,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     Cookies.remove('refreshToken', { path: '/' });
     Cookies.remove('sellerData', { path: '/' });
     Cookies.remove('role', { path: '/' });
-
+  
     // Use timestamp to prevent caching
     const timestamp = new Date().getTime();
-    router.replace(`${loginUrl}?t=${timestamp}`);
+    // Use & instead of ? for additional parameters if URL already contains a query parameter
+    const separator = loginUrl.includes('?') ? '&' : '?';
+    router.replace(`${loginUrl}${separator}t=${timestamp}`);
   }, [loginUrl, router]);
 
+  
   const toggleTheme = () => setIsDarkMode(!isDarkMode);
   const handleOpenWalletOverlay = () => setIsWalletOverlayOpen(true);
   const handleWalletCreated = () => {
